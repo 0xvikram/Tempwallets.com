@@ -10,11 +10,13 @@ export default function DashboardPage() {
       {/* Upper Bar - Mobile Only */}
       <UpperBar />
 
-      {/* Main Content */}
-      <div className="pt-16 lg:pt-20 py-8">
+      {/* Main Content with padding for wallet info */}
+      <div className="pt-16 lg:pt-20 py-8 px-4 sm:px-6 lg:px-8">
         <WalletInfo />
-        <RecentTransactions />
       </div>
+      
+      {/* Recent Transactions - Full width on mobile, constrained on desktop */}
+      <RecentTransactions />
     </div>
   );
 }
