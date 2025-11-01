@@ -82,15 +82,39 @@ export function useWallet(): UseWalletReturn {
     
     try {
       // Try to get addresses from API
-      const addresses = await walletApi.getAddresses(userId);
+      let addresses;
+      try {
+        addresses = await walletApi.getAddresses(userId);
+      } catch (err) {
+        // If 404, wallet doesn't exist - we'll create it
+        if (err instanceof ApiError && err.status === 404) {
+          console.log('🆕 No wallet found (404). Creating new wallet...');
+          
+          // Auto-create wallet
+          await walletApi.createOrImportSeed({
+            userId,
+            mode: 'random',
+          });
+          
+          // Wait a moment for backend to process
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Fetch addresses again after creation
+          addresses = await walletApi.getAddresses(userId);
+          console.log('✅ New wallet created successfully');
+        } else {
+          // If it's a different error, re-throw it
+          throw err;
+        }
+      }
       
-      // Check if user has any wallets
+      // Check if user has any wallets (in case addresses are all null)
       const hasWallets = Object.values(addresses).some(address => address && address.length > 0);
       
       if (!hasWallets) {
-        console.log('🆕 No wallet found. Creating new wallet...');
+        console.log('🆕 Wallet exists but no addresses. Creating new wallet...');
         
-        // Auto-create wallet if none exists
+        // Auto-create wallet if addresses are null
         await walletApi.createOrImportSeed({
           userId,
           mode: 'random',
