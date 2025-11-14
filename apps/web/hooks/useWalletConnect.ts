@@ -124,7 +124,16 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
             const namespaces: SessionTypes.Namespaces = {};
             const requestedChains: string[] = [];
             const allRequestedChains: string[] = [];
-            const unsupportedChains: Set<string> = new Set();
+            const unsupportedRequiredChains: Set<string> = new Set();
+            const unsupportedOptionalChains: Set<string> = new Set();
+
+            const addUnsupportedChain = (chain: string, isRequired: boolean) => {
+              if (isRequired) {
+                unsupportedRequiredChains.add(chain);
+              } else {
+                unsupportedOptionalChains.add(chain);
+              }
+            };
 
             const extractChains = (namespaceKey: string, namespaceData: any): string[] => {
               if (Array.isArray(namespaceData?.chains)) {
@@ -169,7 +178,7 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
               const supportedChains = chains.filter((chain) => {
                 const isSupported = SUPPORTED_WALLETCONNECT_CHAINS.includes(chain);
                 if (!isSupported) {
-                  unsupportedChains.add(chain);
+                  addUnsupportedChain(chain, isRequired);
                 }
                 return isSupported;
               });
@@ -199,7 +208,7 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
               const accounts: string[] = [];
               const missingForNamespace: string[] = [];
 
-              supportedChains.forEach((chain: string) => {
+                supportedChains.forEach((chain: string) => {
                 requestedChains.push(chain);
                 const address = namespacePayload.addressesByChain[chain];
                 if (address) {
@@ -207,7 +216,7 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
                   console.log(`Mapped chain ${chain} to address: ${address}`);
                 } else {
                   missingForNamespace.push(chain);
-                  unsupportedChains.add(chain);
+                    addUnsupportedChain(chain, isRequired);
                   console.warn(`No address available for chain ${chain}. Supported chains:`, namespacePayload.chains);
                 }
               });
@@ -252,9 +261,9 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
               });
             }
 
-            if (unsupportedChains.size > 0) {
-              const unsupportedList = Array.from(unsupportedChains);
-              const errorMsg = `DApp requested unsupported chains: ${unsupportedList.join(
+            if (unsupportedRequiredChains.size > 0) {
+              const unsupportedList = Array.from(unsupportedRequiredChains);
+              const errorMsg = `DApp requested unsupported required chains: ${unsupportedList.join(
                 ', ',
               )}. Please disable those networks and reconnect. Supported chains: ${SUPPORTED_WALLETCONNECT_CHAINS.join(
                 ', ',
@@ -262,11 +271,28 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
               console.error(errorMsg, {
                 namespacePayload,
                 allRequestedChains,
-                unsupportedChains: unsupportedList,
+                unsupportedRequiredChains: unsupportedList,
+                unsupportedOptionalChains: Array.from(unsupportedOptionalChains),
                 requiredNamespaces: params.requiredNamespaces,
                 optionalNamespaces: params.optionalNamespaces,
               });
               throw new Error(errorMsg);
+            }
+
+            if (unsupportedOptionalChains.size > 0) {
+              const optionalList = Array.from(unsupportedOptionalChains);
+              console.warn(
+                `Ignoring unsupported optional chains: ${optionalList.join(', ')}. Supported chains: ${SUPPORTED_WALLETCONNECT_CHAINS.join(
+                  ', ',
+                )}.`,
+                {
+                  namespacePayload,
+                  allRequestedChains,
+                  unsupportedOptionalChains: optionalList,
+                  requiredNamespaces: params.requiredNamespaces,
+                  optionalNamespaces: params.optionalNamespaces,
+                },
+              );
             }
 
             const hasValidNamespaces =
@@ -280,7 +306,8 @@ export function useWalletConnect(userId: string | null): UseWalletConnectReturn 
               console.error(errorMsg, {
                 namespacePayload,
                 requestedChains,
-                unsupportedChains: Array.from(unsupportedChains),
+                unsupportedRequiredChains: Array.from(unsupportedRequiredChains),
+                unsupportedOptionalChains: Array.from(unsupportedOptionalChains),
                 requiredNamespaces: params.requiredNamespaces,
                 optionalNamespaces: params.optionalNamespaces,
               });
