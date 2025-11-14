@@ -57,28 +57,29 @@ const Navbar = () => {
       title: "Features",
       image: "/features-main.png",
       items: [
-        { title: "Feature 1", description: "Description for feature 1" },
-        { title: "Feature 2", description: "Description for feature 2" },
-        { title: "Feature 3", description: "Description for feature 3" },
+        { title: "Easy Wallet Setup", description: "Create multi-chain wallets instantly" },
+        { title: "Secure Sign-In", description: "Seed is encrypted, backend protected" },
+        { title: "DApp Connections", description: "Connect easily to DApps via WalletConnect" }
       ]
     },
     {
       title: "Innovation",
       image: "/innovation-main.png",
       items: [
-        { title: "Innovation 1", description: "Description for innovation 1" },
-        { title: "Innovation 2", description: "Description for innovation 2" },
+        { title: "Multi-Chain Support", description: "Ethereum, Base, Arbitrum, Polygon, Solana, Bitcoin, Tron" },
+        { title: "Gasless ERC-4337", description: "Pay fees with stablecoins, not just native tokens" }
       ]
     },
     {
       title: "Impact",
       image: "/impact-main.png",
       items: [
-        { title: "Impact 1", description: "Description for impact 1" },
-        { title: "Impact 2", description: "Description for impact 2" },
+        { title: "Total Privacy", description: "Private keys never leave backend" },
+        { title: "Global Access", description: "Works in any browser, any device" }
       ]
     }
   ];
+
 
   return (
     <>
@@ -164,7 +165,7 @@ const Navbar = () => {
           <img 
             src="/tempwallets-logo.png" 
             alt="TempWallets" 
-            className="h-[40px] w-[160px] lg:h-[50px] lg:w-[200px] object-contain"
+            className="h-[60px] w-[180px] md:h-[60px] md:w-[220px] lg:h-[65px] lg:w-[260px] xl:h-[80px] xl:w-[300px] object-contain"
           />
         </div>
 
@@ -173,7 +174,7 @@ const Navbar = () => {
           <a href="#" className="text-gray-400 hover:text-white transition-colors font-['Poppins']">
             Blogs
           </a>
-          <a href="#" className="text-gray-400 hover:text-white transition-colors font-['Poppins']">
+          <a href="https://t.me/tempwallets" className="text-gray-400 hover:text-white transition-colors font-['Poppins']">
             Contact
           </a>
           <div className="relative">
@@ -203,7 +204,7 @@ const Navbar = () => {
               <img 
                 src="/tempwallets-logo.png" 
                 alt="TempWallets" 
-                className="h-[40px] w-[160px] object-contain"
+                className="h-[60px] w-[200px] object-contain"
               />
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
