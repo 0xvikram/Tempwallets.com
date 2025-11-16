@@ -67,6 +67,8 @@ const WalletInfo = () => {
       }
     } else if (action === 'copy' && currentWallet) {
       await copyToClipboard(currentWallet.address, currentSlide);
+    } else if (action === 'connect') {
+      // Coming soon - do nothing for now
     }
     // Add other action handlers as needed
   };
@@ -184,7 +186,15 @@ const WalletInfo = () => {
                     </span>
                   </button>
                 </TooltipTrigger>
-                {(action.action === 'send' || action.action === 'connect') && (
+                {action.action === 'send' && (
+                  <TooltipContent 
+                    side="top" 
+                    className="bg-black/20 backdrop-blur-sm text-white text-xs px-3 rounded-lg border border-white/20 max-w-xs"
+                  >
+                    <p>Coming Soon</p>
+                  </TooltipContent>
+                )}
+                {action.action === 'connect' && (
                   <TooltipContent 
                     side="top" 
                     className="bg-black/20 backdrop-blur-sm text-white text-xs px-3 rounded-lg border border-white/20 max-w-xs"
@@ -229,7 +239,15 @@ const WalletInfo = () => {
                     </span>
                   </button>
                 </TooltipTrigger>
-                {(action.action === 'send' || action.action === 'connect') && (
+                {action.action === 'send' && (
+                  <TooltipContent 
+                    side="top" 
+                    className="bg-black/80 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg border border-white/20 max-w-xs shadow-lg"
+                  >
+                    <p>Coming Soon</p>
+                  </TooltipContent>
+                )}
+                {action.action === 'connect' && (
                   <TooltipContent 
                     side="top" 
                     className="bg-black/80 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-lg border border-white/20 max-w-xs shadow-lg"
@@ -242,6 +260,7 @@ const WalletInfo = () => {
           </div>
         </TooltipProvider>
       </div>
+
     </div>
   );
 };
