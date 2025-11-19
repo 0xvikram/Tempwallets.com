@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@repo/ui/components/ui/button";
-import { Card } from "@repo/ui/components/ui/card";
-import { Loader2, Send, RefreshCw, AlertCircle } from "lucide-react";
+import { Card, CardContent } from "@repo/ui/components/ui/card";
+import { Loader2, Send, RefreshCw, AlertCircle, Wallet } from "lucide-react";
 import { walletApi, TokenBalance, ApiError } from "@/lib/api";
 import { useBrowserFingerprint } from "@/hooks/useBrowserFingerprint";
 import { SendCryptoModal } from "@/components/dashboard/send-crypto-modal";
@@ -117,6 +117,7 @@ export default function TransactionsPage() {
     if (fingerprint) {
       loadBalances();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fingerprint]);
 
   const loadBalances = async () => {
@@ -305,137 +306,144 @@ export default function TransactionsPage() {
   // No per-chain retry now; full reload is enough
 
   return (
-    <div className="min-h-screen py-24 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-white">All Transactions</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadBalances}
-            disabled={loading}
-            className="text-white border-white/20 hover:bg-white/10"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-          </Button>
+    <div className="min-h-screen px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        {/* Header Section */}
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-semibold text-white sm:text-4xl">
+                Transactions
+              </h1>
+              <p className="mt-2 text-base text-white/70">
+                Manage your assets across all chains
+              </p>
+            </div>
+            <Button
+              onClick={loadBalances}
+              disabled={loading}
+              className="gap-2 rounded-full bg-white/10 px-4 py-5 text-white hover:bg-white/20"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Balance Cards */}
-        <div className="mb-8 space-y-4">
-          {loading && chainBalances.length === 0 ? (
-            <Card className="p-8 text-center">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">Loading balances...</p>
-            </Card>
-          ) : error && chainBalances.length === 0 ? (
-            <Card className="p-8 text-center border-destructive">
-              <AlertCircle className="h-8 w-8 mx-auto mb-4 text-destructive" />
-              <p className="text-destructive mb-4">{error}</p>
-              <Button onClick={loadBalances} variant="outline">
-                Retry
-              </Button>
-            </Card>
-          ) : (
-            <>
-              {chainBalances
-                .filter((chainBalance) => {
-                  // Only show chains with non-zero balance
-                  const nativeBalance = parseFloat(chainBalance.nativeBalance);
-                  const hasTokenBalance = chainBalance.tokens.some(token => parseFloat(token.balance) > 0);
-                  return nativeBalance > 0 || hasTokenBalance;
-                })
-                .length === 0 ? (
-                <Card className="p-8 text-center">
-                  <p className="text-muted-foreground">No balances found. Wallets are empty.</p>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {chainBalances
-                    .filter((chainBalance) => {
-                      // For Polkadot EVM chains, always show (even with zero balance)
-                      if (chainBalance.category === 'polkadot-evm') {
-                        return true;
-                      }
-                      // For Substrate chains, always show (even with zero balance) - like Polkadot EVM chains
-                      if (chainBalance.category === 'substrate') {
-                        return true;
-                      }
-                      // For other chains, only show if they have non-zero balance
-                      const nativeBalance = parseFloat(chainBalance.nativeBalance);
-                      const hasTokenBalance = chainBalance.tokens.some(token => parseFloat(token.balance) > 0);
-                      return nativeBalance > 0 || hasTokenBalance;
-                    })
-                    .map((chainBalance) => {
-                const chainName = CHAIN_NAMES[chainBalance.chain] || chainBalance.chain;
-                // Use balanceHuman from backend if available, otherwise calculate
-                const formattedNative = chainBalance.nativeBalanceHuman || 
-                  formatBalance(chainBalance.nativeBalance, chainBalance.nativeDecimals);
-                
-                // Format token balances (only non-zero)
-                // Use balanceHuman from backend if available, otherwise calculate with correct decimals
-                const formattedTokens = chainBalance.tokens
-                  .filter(token => parseFloat(token.balance) > 0)
-                  .map(token => {
-                    const formatted = token.balanceHuman || 
-                      formatBalance(token.balance, token.decimals);
-                    return { ...token, formatted };
-                  });
-                
-                // Total tokens count (native + other tokens)
-                const totalTokens = formattedTokens.length + (parseFloat(chainBalance.nativeBalance) > 0 ? 1 : 0);
-                
-                return (
-                  <Card key={chainBalance.chain} className="p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg mb-2">{chainName}</h3>
-                        <div className="space-y-1">
-                            {/* Native token balance */}
-                            {parseFloat(chainBalance.nativeBalance) > 0 && (
-                              <p className="text-xl font-bold text-muted-foreground">
-                                {formattedNative} {getNativeTokenSymbol(chainBalance.chain)}
-                              </p>
-                            )}
-                            {/* Token balances */}
-                            {formattedTokens.map((token) => (
-                              <p key={token.address} className="text-lg font-semibold text-muted-foreground/80">
-                                {token.formatted} {token.symbol}
-                              </p>
-                            ))}
-                            {/* Show "No balance" for Polkadot EVM chains with zero balance */}
-                            {chainBalance.category === 'polkadot-evm' && 
-                             parseFloat(chainBalance.nativeBalance) === 0 && 
-                             formattedTokens.length === 0 && (
-                              <p className="text-sm text-muted-foreground">No balance</p>
-                            )}
-                            {/* Show "No balance" for Substrate chains with zero balance */}
-                            {chainBalance.category === 'substrate' && 
-                             parseFloat(chainBalance.nativeBalance) === 0 && 
-                             formattedTokens.length === 0 && (
-                              <p className="text-sm text-muted-foreground">No balance</p>
-                            )}
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => handleSendClick(chainBalance.chain)}
-                        className="ml-4"
-                      >
-                        <Send className="h-4 w-4 mr-2" />
-                        Send
-                      </Button>
-                    </div>
-                  </Card>
-                );
-              })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        {/* Balance Cards Section */}
+        <Card className="mb-8 border-white/10 rounded-2xl bg-black/70 text-white shadow-2xl backdrop-blur">
+          <CardContent className="p-6 sm:p-8">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="rounded-full bg-white/10 p-2">
+                <Wallet className="h-5 w-5 text-white" />
+              </div>
+              <h2 className="text-xl font-semibold">Your Balances</h2>
+            </div>
+
+            {loading && chainBalances.length === 0 ? (
+              <div className="py-12 text-center">
+                <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-white/60" />
+                <p className="text-sm text-white/70">Loading balances...</p>
+              </div>
+            ) : error && chainBalances.length === 0 ? (
+              <div className="py-12 text-center">
+                <AlertCircle className="mx-auto mb-4 h-8 w-8 text-red-400" />
+                <p className="mb-4 text-sm text-red-400">{error}</p>
+                <Button
+                  onClick={loadBalances}
+                  variant="outline"
+                  className="rounded-full border-white/20 text-white hover:bg-white/10"
+                >
+                  Try Again
+                </Button>
+              </div>
+            ) : (
+              <>
+                {chainBalances
+                  .filter((chainBalance) => {
+                    // Only show chains with non-zero balance
+                    const nativeBalance = parseFloat(chainBalance.nativeBalance);
+                    const hasTokenBalance = chainBalance.tokens.some(token => parseFloat(token.balance) > 0);
+                    return nativeBalance > 0 || hasTokenBalance;
+                  })
+                  .length === 0 ? (
+                  <div className="py-12 text-center">
+                    <Wallet className="mx-auto mb-4 h-12 w-12 text-white/40" />
+                    <p className="text-sm text-white/70">No balances found. Your wallets are empty.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {chainBalances
+                      .filter((chainBalance) => {
+                        // Only show chains with non-zero balance
+                        const nativeBalance = parseFloat(chainBalance.nativeBalance);
+                        const hasTokenBalance = chainBalance.tokens.some(token => parseFloat(token.balance) > 0);
+                        return nativeBalance > 0 || hasTokenBalance;
+                      })
+                      .map((chainBalance) => {
+                        const chainName = CHAIN_NAMES[chainBalance.chain] || chainBalance.chain;
+                        const formattedNative = chainBalance.nativeBalanceHuman || 
+                          formatBalance(chainBalance.nativeBalance, chainBalance.nativeDecimals);
+                        
+                        const formattedTokens = chainBalance.tokens
+                          .filter(token => parseFloat(token.balance) > 0)
+                          .map(token => {
+                            const formatted = token.balanceHuman || 
+                              formatBalance(token.balance, token.decimals);
+                            return { ...token, formatted };
+                          });
+                        
+                        const hasBalance = parseFloat(chainBalance.nativeBalance) > 0 || formattedTokens.length > 0;
+                        
+                        return (
+                          <div
+                            key={chainBalance.chain}
+                            className="group relative rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 via-white/0 to-white/5 p-5 transition-all hover:border-white/20 hover:bg-white/5"
+                          >
+                            <div className="mb-4 flex items-start justify-between">
+                              <div className="flex-1">
+                                <p className="text-xs font-medium uppercase tracking-wider text-white/50">
+                                  {chainName}
+                                </p>
+                                {hasBalance ? (
+                                  <div className="mt-2 space-y-1">
+                                    {parseFloat(chainBalance.nativeBalance) > 0 && (
+                                      <p className="text-lg font-semibold text-white">
+                                        {formattedNative} <span className="text-sm text-white/60">{getNativeTokenSymbol(chainBalance.chain)}</span>
+                                      </p>
+                                    )}
+                                    {formattedTokens.map((token) => (
+                                      <p key={token.address} className="text-sm text-white/80">
+                                        {token.formatted} <span className="text-white/50">{token.symbol}</span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-sm text-white/40">No balance</p>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              onClick={() => handleSendClick(chainBalance.chain)}
+                              size="sm"
+                              className="w-full gap-2 rounded-full bg-white/10 text-xs text-white hover:bg-white/20"
+                            >
+                              <Send className="h-3 w-3" />
+                              Send
+                            </Button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Send Modal */}
         {selectedChain && fingerprint && (

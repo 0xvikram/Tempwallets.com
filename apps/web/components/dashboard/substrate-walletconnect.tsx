@@ -10,13 +10,13 @@
 import { useState } from 'react';
 import { useSubstrateWalletConnect } from '@/hooks/useSubstrateWalletConnect';
 import { useBrowserFingerprint } from '@/hooks/useBrowserFingerprint';
-import { Loader2, Link, Copy, Check, X } from 'lucide-react';
+import { Loader2, Link, Copy, X } from 'lucide-react';
 
 export function SubstrateWalletConnect() {
   const { fingerprint } = useBrowserFingerprint();
   const { 
     isInitializing, 
-    error, 
+    error,
     sessions, 
     pair, 
     disconnect 
@@ -25,7 +25,6 @@ export function SubstrateWalletConnect() {
   const [uriInput, setUriInput] = useState('');
   const [isPairing, setIsPairing] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const handlePasteAndConnect = async () => {
     if (!uriInput.trim()) {
@@ -61,7 +60,7 @@ export function SubstrateWalletConnect() {
       } else {
         setPairError('Clipboard does not contain a valid WalletConnect URI');
       }
-    } catch (error) {
+    } catch {
       setPairError('Failed to read clipboard. Please paste manually.');
     }
   };

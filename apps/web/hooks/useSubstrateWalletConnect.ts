@@ -89,11 +89,12 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
       while (isInitializingGlobal) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      if (globalSubstrateSignClient) {
-        setClient(globalSubstrateSignClient);
+      const existingClient = globalSubstrateSignClient as SignClient | null;
+      if (existingClient) {
+        setClient(existingClient);
         setIsInitializing(false);
         isInitializedRef.current = true;
-        const existingSessions = globalSubstrateSignClient.session.getAll();
+        const existingSessions = existingClient.session.getAll();
         setSessions(
           existingSessions
             .filter(s => {
@@ -120,12 +121,13 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
       }
 
       // Check if client already exists (from another instance)
-      if (globalSubstrateSignClient) {
-        setClient(globalSubstrateSignClient);
+      const existingGlobalClient = globalSubstrateSignClient as SignClient | null;
+      if (existingGlobalClient) {
+        setClient(existingGlobalClient);
         setIsInitializing(false);
         isInitializedRef.current = true;
         isInitializingGlobal = false;
-        const existingSessions = globalSubstrateSignClient.session.getAll();
+        const existingSessions = existingGlobalClient.session.getAll();
         setSessions(
           existingSessions
             .filter(s => {
@@ -141,12 +143,11 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
         return;
       }
 
-      // Wait a bit to ensure AppKit has finished initializing first
+      // Wait a bit to ensure any other WalletConnect initialization has finished first
       // This helps avoid storage conflicts
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Initialize SignClient with error handling for storage conflicts
-      // AppKit initializes WalletConnect Core first, so we need to handle potential conflicts
       let signClient: SignClient;
       try {
         signClient = await SignClient.init({
@@ -321,10 +322,13 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
               console.log('[SubstrateWalletConnect] Approving session with namespaces:', JSON.stringify(namespaces, null, 2));
 
               // Approve session
-              const session = await signClient.approve({
+              const { topic } = await signClient.approve({
                 id,
                 namespaces,
               });
+              
+              // Get full session object from store
+              const session = signClient.session.get(topic);
 
               console.log('[SubstrateWalletConnect] Session approved:', session);
               
@@ -459,16 +463,8 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
         });
 
         // Suppress "No matching key" warnings - these are expected for stale sessions
-        const originalError = console.error;
-        const suppressedErrors = ['No matching key', 'failed to process an inbound message'];
-        console.error = (...args: any[]) => {
-          const message = args[0]?.msg || args[0] || '';
-          if (typeof message === 'string' && suppressedErrors.some(err => message.includes(err))) {
-            // Suppress these non-critical WalletConnect warnings
-            return;
-          }
-          originalError.apply(console, args);
-        };
+        // Note: We previously patched console.error here, but it caused stability issues.
+        // It's better to allow the warnings than to risk crashing the application.
       } catch (err) {
         console.error('[SubstrateWalletConnect] Initialization failed:', err);
         setError(err instanceof Error ? err.message : 'Failed to initialize WalletConnect');
@@ -552,10 +548,12 @@ export function useSubstrateWalletConnect(userId: string | null): UseSubstrateWa
     }
 
     try {
-      const session = await client.approve({
+      const { topic } = await client.approve({
         id: proposalId,
         namespaces,
       });
+      
+      const session = client.session.get(topic);
 
       setSessions(prev => [...prev, {
         topic: session.topic,

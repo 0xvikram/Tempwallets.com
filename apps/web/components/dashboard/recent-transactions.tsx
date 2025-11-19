@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, ArrowUpRight, ArrowDownLeft, ExternalLink, Clock } from "lucide-react";
 import { walletApi, Transaction, ApiError } from "@/lib/api";
@@ -122,7 +123,8 @@ const getExplorerUrl = (txHash: string, chain: string, isTestnet: boolean = fals
   return '#';
 };
 
-// Legacy function for backward compatibility
+// Legacy function for backward compatibility (kept for potential future use)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const CHAIN_EXPLORER_URLS: Record<string, (txHash: string) => string> = {
   // Zerion canonical chain ids
   ethereum: (hash) => getExplorerUrl(hash, 'ethereum', false),
@@ -229,30 +231,37 @@ const RecentTransactions = ({ showAll = false }: RecentTransactionsProps) => {
       const SUBSTRATE_CHAINS = ["polkadot", "hydrationSubstrate", "bifrostSubstrate", "uniqueSubstrate", "paseo", "paseoAssethub"];
       const substrateTransactions: Transaction[] = [];
       
-      try {
-        for (const chain of SUBSTRATE_CHAINS) {
-          try {
-            const history = await walletApi.getSubstrateTransactions(fingerprint, chain, false, 10);
-            // Transform Substrate transactions to Transaction format
-            for (const tx of history.transactions) {
-              substrateTransactions.push({
-                txHash: tx.txHash,
-                from: tx.from,
-                to: tx.to || null,
-                value: tx.amount || '0',
-                timestamp: tx.timestamp ? Math.floor(tx.timestamp / 1000) : null, // Convert ms to seconds if needed
-                blockNumber: tx.blockNumber || null,
-                status: tx.status === 'finalized' || tx.status === 'inBlock' ? 'success' : 
-                        tx.status === 'failed' || tx.status === 'error' ? 'failed' : 'pending',
-                chain: chain,
-                tokenSymbol: undefined, // Substrate native token symbol would need to be fetched separately
-              });
-            }
-          } catch (chainErr) {
-            console.warn(`Failed to load transactions for ${chain}:`, chainErr);
-            // Continue with other chains
-          }
+      // Fetch Substrate transactions in parallel with proper error handling
+      const substratePromises = SUBSTRATE_CHAINS.map(async (chain) => {
+        try {
+          const history = await walletApi.getSubstrateTransactions(fingerprint, chain, false, 10);
+          // Transform Substrate transactions to Transaction format
+          return history.transactions.map(tx => ({
+            txHash: tx.txHash,
+            from: tx.from,
+            to: tx.to || null,
+            value: tx.amount || '0',
+            timestamp: tx.timestamp ? Math.floor(tx.timestamp / 1000) : null, // Convert ms to seconds if needed
+            blockNumber: tx.blockNumber || null,
+            status: tx.status === 'finalized' || tx.status === 'inBlock' ? 'success' : 
+                    tx.status === 'failed' || tx.status === 'error' ? 'failed' : 'pending',
+            chain: chain,
+            tokenSymbol: undefined, // Substrate native token symbol would need to be fetched separately
+          } as Transaction));
+        } catch (chainErr) {
+          console.warn(`Failed to load transactions for ${chain}:`, chainErr);
+          return []; // Return empty array on error
         }
+      });
+      
+      try {
+        // Wait for all Substrate chain queries to complete (or fail)
+        const substrateResults = await Promise.allSettled(substratePromises);
+        substrateResults.forEach(result => {
+          if (result.status === 'fulfilled' && result.value) {
+            substrateTransactions.push(...result.value);
+          }
+        });
       } catch (substrateErr) {
         console.warn('Failed to load Substrate transactions:', substrateErr);
         // Don't fail the whole load if Substrate fails
@@ -284,14 +293,20 @@ const RecentTransactions = ({ showAll = false }: RecentTransactionsProps) => {
         setCachedTransactions(fingerprint, limited);
       }
     } catch (err) {
+      // Only show error if it's a critical error from the main EVM transaction fetch
+      // Substrate transaction errors are handled gracefully above
+      console.error('Failed to load transactions:', err);
       const errorMessage = err instanceof ApiError 
         ? err.message 
         : "Failed to load transactions";
-      setError(errorMessage);
+      // Only set error if we have no transactions at all to show
+      if (transactions.length === 0) {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
-  }, [fingerprint, showAll]);
+  }, [fingerprint, showAll, transactions.length]);
 
   useEffect(() => {
     if (fingerprint) {
@@ -324,6 +339,8 @@ const RecentTransactions = ({ showAll = false }: RecentTransactionsProps) => {
     return getExplorerUrl(tx.txHash, tx.chain, isTestnet);
   };
 
+  // Helper function to determine if transaction is outgoing (kept for potential future use)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isOutgoing = (tx: Transaction, userAddress: string): boolean => {
     return tx.from.toLowerCase() === userAddress.toLowerCase();
   };
@@ -379,10 +396,12 @@ const RecentTransactions = ({ showAll = false }: RecentTransactionsProps) => {
           <div className="flex flex-col items-center justify-center py-16 md:py-20">
             {/* Empty Mailbox GIF */}
             <div className="-mt-32">
-              <img
+              <Image
                 src="/empty-mailbox-illustration-with-spiderweb-and-flie-2025-10-20-04-28-09-utc.gif"
                 alt="Empty mailbox illustration"
-                className="w-80 h-80 md:w-90 md:h-90 object-contain mix-blend-multiply"
+                width={320}
+                height={320}
+                className="object-contain mix-blend-multiply"
               />
             </div>
             <p className="text-gray-600 text-lg md:text-xl font-medium z-10 -mt-16">

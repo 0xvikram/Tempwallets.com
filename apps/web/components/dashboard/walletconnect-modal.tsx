@@ -29,7 +29,6 @@ export function WalletConnectModal({ open, onOpenChange }: WalletConnectModalPro
   const { fingerprint } = useBrowserFingerprint();
   const { 
     isInitializing, 
-    error, 
     sessions, 
     pair, 
     disconnect,
@@ -104,7 +103,7 @@ export function WalletConnectModal({ open, onOpenChange }: WalletConnectModalPro
             setPairError('Invalid WalletConnect URI in QR code');
           }
         },
-        (errorMessage) => {
+        () => {
           // Ignore scanning errors (they're frequent during scanning)
         }
       );
@@ -167,7 +166,7 @@ export function WalletConnectModal({ open, onOpenChange }: WalletConnectModalPro
       } else {
         setPairError('Clipboard does not contain a valid WalletConnect URI');
       }
-    } catch (error) {
+    } catch {
       setPairError('Failed to read clipboard. Please paste manually.');
     }
   };
@@ -200,11 +199,6 @@ export function WalletConnectModal({ open, onOpenChange }: WalletConnectModalPro
           </div>
         ) : (
           <div className="space-y-4">
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/50 rounded-xl p-3">
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
 
             {sessions.length === 0 ? (
               <div className="space-y-4">

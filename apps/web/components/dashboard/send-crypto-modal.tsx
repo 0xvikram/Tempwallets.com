@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -226,24 +226,7 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
   const [txHash, setTxHash] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Load tokens when modal opens
-  useEffect(() => {
-    if (open && userId && chain) {
-      loadTokens();
-    } else {
-      // Reset state when modal closes
-      setTokens([]);
-      setSelectedToken(null);
-      setAmount("");
-      setRecipientAddress("");
-      setError(null);
-      setFieldErrors({});
-      setTxHash(null);
-      setSuccess(false);
-    }
-  }, [open, userId, chain]);
-
-  const loadTokens = async () => {
+  const loadTokens = useCallback(async () => {
     setLoadingTokens(true);
     setError(null);
     try {
@@ -265,7 +248,7 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
             decimals: chainBalance.decimals,
           }];
           setTokens(tokenList);
-          setSelectedToken(tokenList[0]);
+          setSelectedToken(tokenList[0] ?? null);
         } else {
           setTokens([]);
           setError("No address found for this Substrate chain");
@@ -303,7 +286,24 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
     } finally {
       setLoadingTokens(false);
     }
-  };
+  }, [userId, chain]);
+
+  // Load tokens when modal opens
+  useEffect(() => {
+    if (open && userId && chain) {
+      loadTokens();
+    } else {
+      // Reset state when modal closes
+      setTokens([]);
+      setSelectedToken(null);
+      setAmount("");
+      setRecipientAddress("");
+      setError(null);
+      setFieldErrors({});
+      setTxHash(null);
+      setSuccess(false);
+    }
+  }, [open, userId, chain, loadTokens]);
 
   const validateForm = (): boolean => {
     const errors: { amount?: string; address?: string } = {};
@@ -439,25 +439,25 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Send {chainName}</DialogTitle>
-          <DialogDescription>
-            Send crypto to a recipient address on {chainName} network
+      <DialogContent className="border-white/10 bg-black/90 text-white shadow-2xl backdrop-blur sm:max-w-[300px] p-0 rounded-2xl">
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle className="text-xl font-semibold">Send {chainName}</DialogTitle>
+          <DialogDescription className="text-sm text-white/60">
+            Transfer to recipient address
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 px-6 pb-6">
           {/* Token Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="token">Token</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="token" className="text-xs font-medium text-white/80">Token</Label>
             {loadingTokens ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading tokens...
+              <div className="flex items-center gap-2 text-xs text-white/60 py-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading...
               </div>
             ) : tokens.length === 0 ? (
-              <div className="text-sm text-destructive">No tokens available</div>
+              <div className="text-xs text-red-400 py-2">No tokens available</div>
             ) : (
               <Select
                 value={selectedToken?.address || "native"}
@@ -466,12 +466,16 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
                   setSelectedToken(token ?? null);
                 }}
               >
-                <SelectTrigger id="token">
-                  <SelectValue placeholder="Select a token" />
+                <SelectTrigger id="token" className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white hover:bg-white/10">
+                  <SelectValue placeholder="Select token" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-xl border-white/20 bg-black/95 text-white">
                   {tokens.map((token) => (
-                    <SelectItem key={token.address || "native"} value={token.address || "native"}>
+                    <SelectItem 
+                      key={token.address || "native"} 
+                      value={token.address || "native"}
+                      className="text-sm focus:bg-white/10 focus:text-white"
+                    >
                       {token.symbol} - {formatBalance(token.balance, token.decimals)}
                     </SelectItem>
                   ))}
@@ -481,8 +485,8 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
           </div>
 
           {/* Amount Input */}
-          <div className="space-y-2">
-            <Label htmlFor="amount">Amount</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="amount" className="text-xs font-medium text-white/80">Amount</Label>
             <Input
               id="amount"
               type="number"
@@ -496,26 +500,26 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
                 }
               }}
               disabled={loading || !selectedToken}
+              className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/20"
             />
-            {fieldErrors.amount && (
-              <p className="text-sm text-destructive flex items-center gap-1">
+            {fieldErrors.amount ? (
+              <p className="text-xs text-red-400 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />
                 {fieldErrors.amount}
               </p>
-            )}
-            {selectedToken && !fieldErrors.amount && (
-              <p className="text-xs text-muted-foreground">
+            ) : selectedToken && (
+              <p className="text-xs text-white/40">
                 Available: {formatBalance(selectedToken.balance, selectedToken.decimals)} {selectedToken.symbol}
               </p>
             )}
           </div>
 
           {/* Recipient Address Input */}
-          <div className="space-y-2">
-            <Label htmlFor="recipient">Recipient Address</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="recipient" className="text-xs font-medium text-white/80">Recipient</Label>
             <Input
               id="recipient"
-              placeholder="Enter recipient address"
+              placeholder="Enter address"
               value={recipientAddress}
               onChange={(e) => {
                 setRecipientAddress(e.target.value);
@@ -524,9 +528,10 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
                 }
               }}
               disabled={loading}
+              className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/20"
             />
             {fieldErrors.address && (
-              <p className="text-sm text-destructive flex items-center gap-1">
+              <p className="text-xs text-red-400 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />
                 {fieldErrors.address}
               </p>
@@ -535,9 +540,9 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
 
           {/* Error Display */}
           {error && (
-            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3">
-              <p className="text-sm text-destructive flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
+            <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-2.5">
+              <p className="text-xs text-red-400 flex items-center gap-1.5">
+                <AlertCircle className="h-3 w-3" />
                 {error}
               </p>
             </div>
@@ -545,40 +550,50 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
 
           {/* Success Display */}
           {success && txHash && (
-            <div className="rounded-md bg-green-500/10 border border-green-500/20 p-3">
-              <p className="text-sm text-green-600 dark:text-green-400 flex items-center gap-2 mb-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Transaction sent successfully!
+            <div className="rounded-lg bg-green-500/10 border border-green-500/30 p-2.5">
+              <p className="text-xs text-green-400 flex items-center gap-1.5 mb-1.5">
+                <CheckCircle2 className="h-3 w-3" />
+                Transaction sent!
               </p>
               <a
                 href={getExplorerUrl(txHash, chain)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline flex items-center gap-1"
+                className="text-xs text-white/70 hover:text-white hover:underline flex items-center gap-1"
               >
-                View on explorer <ExternalLink className="h-3 w-3" />
+                View explorer <ExternalLink className="h-3 w-3" />
               </a>
             </div>
           )}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            {success ? "Close" : "Cancel"}
-          </Button>
-          {!success && (
-            <Button onClick={handleSend} disabled={loading || loadingTokens || !selectedToken}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                "Send"
-              )}
+          {/* Action Buttons */}
+          <div className="flex gap-2 pt-2">
+            <Button 
+              variant="outline" 
+              onClick={() => onOpenChange(false)} 
+              disabled={loading}
+              className="flex-1 h-9 text-sm rounded-full border-white/20 text-white hover:bg-white/10"
+            >
+              {success ? "Close" : "Cancel"}
             </Button>
-          )}
-        </DialogFooter>
+            {!success && (
+              <Button 
+                onClick={handleSend} 
+                disabled={loading || loadingTokens || !selectedToken}
+                className="flex-1 h-9 text-sm rounded-full bg-white text-black hover:bg-white/90"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    Sending
+                  </>
+                ) : (
+                  "Send"
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

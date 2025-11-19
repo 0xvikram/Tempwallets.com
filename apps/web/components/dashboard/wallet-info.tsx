@@ -1,7 +1,7 @@
-import { Smartphone, Wallet, FileText, Copy, Check, Loader2, AlertCircle, RefreshCw, QrCode, Send } from "lucide-react";
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, CarouselApi } from "@repo/ui/components/ui/carousel";
+import { Copy, Check, Loader2, RefreshCw, QrCode, Send } from "lucide-react";
+import { Carousel, CarouselContent, CarouselItem, CarouselApi } from "@repo/ui/components/ui/carousel";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@repo/ui/components/ui/tooltip";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { walletStorage } from "@/lib/walletStorage";
 import { useBrowserFingerprint } from "@/hooks/useBrowserFingerprint";
@@ -12,7 +12,7 @@ const WalletInfo = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
   const [walletConnectOpen, setWalletConnectOpen] = useState(false);
-  const { wallets, loading, error, loadWallets, changeWallets } = useWallet();
+  const { wallets, loading, error, loadWallets } = useWallet();
   
   // Use browser fingerprint as unique user ID
   const { fingerprint, loading: fingerprintLoading, generateNewWallet } = useBrowserFingerprint();
@@ -71,14 +71,14 @@ const WalletInfo = () => {
         // The useEffect will automatically call loadWallets when fingerprint changes
       }
     } else if (action === 'copy' && currentWallet) {
-      await copyToClipboard(currentWallet.address, currentSlide);
+      await copyToClipboard(currentWallet.address);
     } else if (action === 'connect') {
       setWalletConnectOpen(true);
     }
     // Add other action handlers as needed
   };
 
-  const copyToClipboard = async (address: string, index: number) => {
+  const copyToClipboard = async (address: string) => {
     try {
       await navigator.clipboard.writeText(address);
       setCopiedIndex(currentSlide);
