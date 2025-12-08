@@ -950,4 +950,63 @@ export function subscribeToSSE<T>(
   };
 }
 
+export const userApi = {
+  /**
+   * Get current user profile
+   */
+  async getProfile(): Promise<import('@repo/types').UserProfile> {
+    return fetchApi<import('@repo/types').UserProfile>('/user/profile');
+  },
+
+  /**
+   * Update user profile
+   */
+  async updateProfile(data: import('@repo/types').UpdateProfileRequest): Promise<import('@repo/types').UserProfile> {
+    return fetchApi<import('@repo/types').UserProfile>('/user/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get user statistics
+   */
+  async getStats(): Promise<import('@repo/types').UserStats> {
+    return fetchApi<import('@repo/types').UserStats>('/user/stats');
+  },
+
+  /**
+   * Get user activity
+   */
+  async getActivity(limit: number = 50): Promise<import('@repo/types').UserActivity[]> {
+    return fetchApi<import('@repo/types').UserActivity[]>(`/user/activity?limit=${limit}`);
+  },
+
+  /**
+   * Delete user account
+   */
+  async deleteAccount(): Promise<{ success: boolean }> {
+    return fetchApi<{ success: boolean }>('/user/account', {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Get user XP (experience points)
+   */
+  async getXP(): Promise<{ xp: number }> {
+    return fetchApi<{ xp: number }>('/user/xp');
+  },
+
+  /**
+   * Award XP to user (e.g., for creating a wallet)
+   */
+  async awardXP(amount: number, reason: string): Promise<{ xp: number; totalXP: number }> {
+    return fetchApi<{ xp: number; totalXP: number }>('/user/xp/award', {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason }),
+    });
+  },
+};
+
 export { ApiError };

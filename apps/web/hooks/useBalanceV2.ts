@@ -1,4 +1,13 @@
 /**
+ * COMMENTED OUT - REDUNDANT CODE
+ * This hook is not currently used in the application.
+ * The app now uses useWalletData context for balance management.
+ * Keeping this commented out for reference in case it's needed later.
+ * Date: 2025-12-08
+ */
+
+/*
+/**
  * Balance V2 Hook - Unified Interface
  * 
  * Drop-in replacement for existing balance hooks with backward compatibility.
@@ -9,7 +18,7 @@
  * - Aggregates balance data from streaming states
  * - Provides convenient access methods
  * - Optional streaming indicators for UI
- */
+ *\/
 
 import { useMemo } from 'react';
 import { useStreamingBalances, type UseStreamingBalancesReturn } from './useStreamingBalances';
@@ -258,3 +267,4 @@ export function useBalanceV2Extended(): UseBalanceV2ExtendedReturn {
     getBalancesByType,
   };
 }
+*/

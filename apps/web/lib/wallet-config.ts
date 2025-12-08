@@ -354,7 +354,7 @@ export const WALLET_CONFIGS: WalletConfig[] = [
     features: {
       showInSelector: true,
       showInWalletList: true,
-      enabledInProd: false, // Start with dev/testnet only
+      enabledInProd: true, // Enabled for MVP
       enabledInDev: true,
       advancedOnly: false,
     },
@@ -937,9 +937,14 @@ export const getWalletConfigs = (filter?: WalletConfigFilter): WalletConfig[] =>
 
 /**
  * Get visible wallet configurations for the selector
+ * MVP: Only show Ethereum, Base, Polkadot, and Aptos in the horizontal selector
+ * Full list (all gasless EVMs + Polkadot + Aptos) is available in the modal
  */
 export const getVisibleWalletConfigs = (environment: 'development' | 'production' = 'production'): WalletConfig[] => {
   const isDev = environment === 'development';
+  
+  // MVP: Only show these 4 chains in the horizontal selector
+  const mvpChainIds = ['ethereumErc4337', 'baseErc4337', 'polkadot', 'aptos'];
   
   // Filter configs manually for more control
   return WALLET_CONFIGS.filter((config) => {
@@ -970,22 +975,34 @@ export const getVisibleWalletConfigs = (environment: 'development' | 'production
       return false;
     }
     
+    // MVP: Only show the 4 specific chains in horizontal selector
+    if (!mvpChainIds.includes(config.id)) {
+      return false;
+    }
+    
     return true;
   }).sort((a, b) => {
-    // First, sort by enabled status (enabled chains first)
+    // Sort by the order in mvpChainIds array
+    const aIndex = mvpChainIds.indexOf(a.id);
+    const bIndex = mvpChainIds.indexOf(b.id);
+    
+    // If both are in the list, sort by their position
+    if (aIndex !== -1 && bIndex !== -1) {
+      return aIndex - bIndex;
+    }
+    
+    // Fallback: sort by enabled status, then priority, then name
     const aEnabled = isDev ? a.features.enabledInDev : a.features.enabledInProd;
     const bEnabled = isDev ? b.features.enabledInDev : b.features.enabledInProd;
     
     if (aEnabled !== bEnabled) {
-      return aEnabled ? -1 : 1; // enabled (true) comes before disabled (false)
+      return aEnabled ? -1 : 1;
     }
     
-    // Then by priority
     if (a.priority !== b.priority) {
       return a.priority - b.priority;
     }
     
-    // Finally by name
     return a.name.localeCompare(b.name);
   });
 };

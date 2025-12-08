@@ -1,4 +1,13 @@
 /**
+ * COMMENTED OUT - REDUNDANT CODE
+ * This hook is not currently used in the application.
+ * The app now uses useWalletData context for balance management.
+ * Keeping this commented out for reference in case it's needed later.
+ * Date: 2025-12-08
+ */
+
+/*
+/**
  * Streaming Balances Hook
  * 
  * Progressive balance loading with SSE support.
@@ -11,7 +20,7 @@
  * - Balance caching with TTL
  * - Rate limiting handling
  * - Automatic cleanup on unmount
- */
+ *\/
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { subscribeToSSE, walletApi, type TokenBalance as ApiTokenBalance } from '@/lib/api';
@@ -657,3 +666,4 @@ export function useStreamingBalances(): UseStreamingBalancesReturn {
     totalCount,
   };
 }
+*/
