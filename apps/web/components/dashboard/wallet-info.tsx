@@ -1,5 +1,15 @@
-import { Copy, Check, Loader2, RefreshCw, QrCode, Send, History } from "lucide-react";
+import { Copy, Check, Loader2, QrCode, Send, History, RefreshCw } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@repo/ui/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@repo/ui/components/ui/alert-dialog";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useWalletV2 } from "@/hooks/useWalletV2";
@@ -10,11 +20,13 @@ import { walletApi } from "@/lib/api";
 import { WalletConnectModal } from "./walletconnect-modal";
 import { EvmWalletConnectModal } from "./evm-walletconnect-modal";
 import { WalletHistoryModal } from "./wallet-history-modal";
+import { SendCryptoModal } from "./send-crypto-modal";
 import { WalletCard } from "./wallet-card";
 import { ChainSelector } from "./chain-selector";
 import { DEFAULT_CHAIN, getChainById } from "@/lib/chains";
 import { useWalletConfig } from "@/hooks/useWalletConfig";
 import { trackMixpanelEvent } from "@/lib/mixpanel";
+import { useXP } from "@/hooks/useXP";
 
 const WalletInfo = () => {
   const router = useRouter();
@@ -23,11 +35,16 @@ const WalletInfo = () => {
   const [substrateWalletConnectOpen, setSubstrateWalletConnectOpen] = useState(false);
   const [evmWalletConnectOpen, setEvmWalletConnectOpen] = useState(false);
   const [walletHistoryOpen, setWalletHistoryOpen] = useState(false);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [signInPromptOpen, setSignInPromptOpen] = useState(false);
   const { wallets, loading, error, loadWallets, getWalletByChainType } = useWalletV2();
   const walletConfig = useWalletConfig();
   
   // Auth - use Google user ID when authenticated
-  const { user, isAuthenticated, userId: authUserId, loading: authLoading } = useAuth();
+  const { user, isAuthenticated, userId: authUserId, loading: authLoading, login } = useAuth();
+  
+  // XP system - disabled for now
+  // const { awardXP, awardXPOptimistic } = useXP();
   
   // Track chain changes
   const handleChainChange = (chainId: string) => {
@@ -107,14 +124,15 @@ const WalletInfo = () => {
     }
   }, [loadWallets, userId, authLoading, isAuthenticated, fingerprint, user]);
 
-  // Show History button only for authenticated users
+  // History button is always visible (blurred when not authenticated)
   const actions = [
     { icon: QrCode, label: "Connect", action: "connect" },
     { icon: Send, label: "Send", action: "send" },
     { icon: Copy, label: "Copy", action: "copy" },
-    ...(isAuthenticated ? [{ icon: History, label: "History", action: "history" }] : []),
-    { icon: RefreshCw, label: "Change", action: "change" },
+    { icon: History, label: "History", action: "history" },
+    { icon: RefreshCw, label: "Create New", action: "change" },
   ];
+
 
   const getIconContainerStyles = (action: string) => {
     const baseStyles = "w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center transition-colors";
@@ -146,7 +164,6 @@ const WalletInfo = () => {
       // When authenticated with Google, "Change" creates a new wallet under the same Google account
       // When not authenticated, it generates a new fingerprint
       if (currentUserId) {
-        console.log('🔄 Change button clicked - Current userId:', currentUserId, currentIsAuthenticated ? '(Google)' : '(fingerprint)');
         
         // Track wallet change action
         trackMixpanelEvent("V2-Dashboard", {
@@ -159,7 +176,6 @@ const WalletInfo = () => {
         
         // Clear the cache for current user first
         walletStorage.clearAddresses();
-        console.log('🧹 Cleared wallet cache');
         
         let walletIdToUse = currentUserId;
         
@@ -167,26 +183,21 @@ const WalletInfo = () => {
         // When authenticated, we regenerate the seed for the same user ID
         if (!currentIsAuthenticated) {
           walletIdToUse = generateNewWallet();
-          console.log('✨ Generated new wallet ID:', walletIdToUse);
         } else {
           // When authenticated with Google, create a new seed for the same user ID
-          console.log('🔒 Regenerating seed for Google user:', currentUserId);
           try {
             await walletApi.createOrImportSeed({
               userId: currentUserId,
               mode: 'random',
             });
-            console.log('✅ New seed created for Google user');
           } catch (error) {
-            console.error('❌ Failed to create new seed:', error);
+            console.error('Failed to create new seed:', error);
             return; // Don't continue if seed creation failed
           }
         }
         
         // Force refresh to fetch new wallets immediately
-        console.log('📡 Fetching new wallets from backend...');
         await loadWallets(walletIdToUse, true);
-        console.log('✅ New wallets loaded successfully');
         
         // Track successful wallet creation
         trackMixpanelEvent("V2-Dashboard", {
@@ -201,10 +212,19 @@ const WalletInfo = () => {
     } else if (action === 'copy' && currentWallet) {
       await copyToClipboard(currentWallet.address);
     } else if (action === 'send') {
-      router.push('/transactions');
+      // Open send modal instead of navigating to transactions page
+      if (userId && selectedChainId) {
+        setSendModalOpen(true);
+      }
     } else if (action === 'history') {
-      // Open wallet history modal for authenticated users
-      setWalletHistoryOpen(true);
+      // Check if user is authenticated
+      if (isAuthenticated && userId) {
+        // Open wallet history modal for authenticated users
+        setWalletHistoryOpen(true);
+      } else {
+        // Show sign-in prompt for unauthenticated users
+        setSignInPromptOpen(true);
+      }
     } else if (action === 'connect') {
       // Open appropriate WalletConnect modal based on chain type
       if (selectedChain.hasWalletConnect) {
@@ -251,19 +271,25 @@ const WalletInfo = () => {
   {/* Action Buttons */}
   <div className="rounded-3xl p-4 md:p-6 mt-0 pt-6 md:pt-8" style={{ backgroundColor: '#161616' }}>
         <TooltipProvider>
-          <div className={`grid gap-2 md:gap-4 ${isAuthenticated ? 'grid-cols-5' : 'grid-cols-4'}`}>
-            {actions.map((action) => {
+          <div className="grid gap-2 md:gap-4 grid-cols-5 w-full">
+            {actions.map((action, index) => {
               const isDisabled = 
                 (loading && action.action === 'change') || 
                 (!selectedChain.hasWalletConnect && action.action === 'connect');
               
+              // History button should be dimmed when not authenticated
+              const isHistoryDimmed = action.action === 'history' && !isAuthenticated;
+              
               return (
-                <Tooltip key={action.label} delayDuration={300}>
+                <Tooltip key={`${action.action}-${index}`} delayDuration={300}>
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => handleActionClick(action.action)}
                       disabled={isDisabled}
-                      className="flex flex-col items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                      data-action={action.action}
+                      className={`flex flex-col items-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed transition-all w-full ${
+                        isHistoryDimmed ? 'opacity-50' : ''
+                      }`}
                     >
                       <div className={getIconContainerStyles(action.action)}>
                         {loading && action.action === 'change' ? (
@@ -274,8 +300,10 @@ const WalletInfo = () => {
                           <action.icon className="h-6 w-6 md:h-8 md:w-8 text-white" />
                         )}
                       </div>
-                      <span className="text-xs md:text-sm lg:text-sm font-rubik-normal text-white">
-                        {loading && action.action === 'change' ? 'Changing...' : 
+                      <span className={`text-xs md:text-sm lg:text-sm font-rubik-normal ${
+                        isHistoryDimmed ? 'text-white/50' : 'text-white'
+                      }`}>
+                        {loading && action.action === 'change' ? 'Creating...' : 
                          action.action === 'copy' && copied ? 'Copied!' : 
                          action.label}
                       </span>
@@ -321,8 +349,8 @@ const WalletInfo = () => {
         onOpenChange={setEvmWalletConnectOpen} 
       />
 
-      {/* Wallet History Modal - Only for authenticated users */}
-      {isAuthenticated && userId && (
+      {/* Wallet History Modal - Always rendered, but only functional when authenticated */}
+      {userId && (
         <WalletHistoryModal
           open={walletHistoryOpen}
           onOpenChange={setWalletHistoryOpen}
@@ -330,6 +358,50 @@ const WalletInfo = () => {
           onSwitchWallet={async () => {
             // Reload wallets after switching
             await loadWallets(userId, true);
+          }}
+        />
+      )}
+
+      {/* Sign-In Prompt Dialog */}
+      <AlertDialog open={signInPromptOpen} onOpenChange={setSignInPromptOpen}>
+        <AlertDialogContent className="border-white/10 bg-black/90 text-white shadow-2xl backdrop-blur sm:max-w-[425px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-semibold flex items-center gap-2">
+              Sign In Required
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-white/70 pt-2">
+              If you want to view the history of your past wallets that you have used, please sign in using Google SSO.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex gap-2 sm:gap-0">
+            <AlertDialogCancel className="bg-white/10 text-white hover:bg-white/20 border-white/20">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setSignInPromptOpen(false);
+                login();
+              }}
+              className="bg-[#4C856F] text-white hover:bg-[#4C856F]/90"
+            >
+              Sign In with Google
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Send Crypto Modal */}
+      {userId && selectedChainId && (
+        <SendCryptoModal
+          open={sendModalOpen}
+          onOpenChange={setSendModalOpen}
+          chain={selectedChainId}
+          userId={userId}
+          onSuccess={() => {
+            // Refresh balances after successful send
+            if (currentWallet) {
+              loadWallets(userId, true);
+            }
           }}
         />
       )}

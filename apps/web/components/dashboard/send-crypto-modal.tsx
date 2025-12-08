@@ -19,8 +19,9 @@ import {
   SelectValue,
 } from "@repo/ui/components/ui/select";
 import { Label } from "@repo/ui/components/ui/label";
-import { Loader2, AlertCircle, CheckCircle2, ExternalLink, Zap } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, ExternalLink, Zap, Clipboard } from "lucide-react";
 import { walletApi, TokenBalance, ApiError, AnyChainAsset } from "@/lib/api";
+import { useTokenIcon } from "@/lib/token-icons";
 
 interface SendCryptoModalProps {
   open: boolean;
@@ -30,19 +31,20 @@ interface SendCryptoModalProps {
   onSuccess?: () => void;
 }
 
+// Clean chain names (without technical suffixes)
 const CHAIN_NAMES: Record<string, string> = {
   ethereum: "Ethereum",
   tron: "Tron",
   bitcoin: "Bitcoin",
   solana: "Solana",
-  ethereumErc4337: "Ethereum (ERC-4337)",
-  baseErc4337: "Base (ERC-4337)",
-  arbitrumErc4337: "Arbitrum (ERC-4337)",
-  polygonErc4337: "Polygon (ERC-4337)",
+  ethereumErc4337: "Ethereum",
+  baseErc4337: "Base",
+  arbitrumErc4337: "Arbitrum",
+  polygonErc4337: "Polygon",
   base: "Base",
   arbitrum: "Arbitrum",
   polygon: "Polygon",
-  avalancheErc4337: "Avalanche (ERC-4337)",
+  avalancheErc4337: "Avalanche",
   avalanche: "Avalanche",
   // Polkadot EVM Compatible chains
   moonbeamTestnet: "Moonbeam Testnet",
@@ -50,22 +52,22 @@ const CHAIN_NAMES: Record<string, string> = {
   paseoPassetHub: "Paseo PassetHub",
   // Substrate/Polkadot chains
   polkadot: "Polkadot",
-  hydrationSubstrate: "Hydration (Substrate)",
-  bifrostSubstrate: "Bifrost (Substrate)",
-  uniqueSubstrate: "Unique (Substrate)",
+  hydrationSubstrate: "Hydration",
+  bifrostSubstrate: "Bifrost",
+  uniqueSubstrate: "Unique",
   paseo: "Paseo",
   paseoAssethub: "Paseo AssetHub",
   // Aptos chains
   aptos: "Aptos",
   aptosTestnet: "Aptos Testnet",
   // EIP-7702 Gasless chains
-  ethereumGasless: "Ethereum (Gasless)",
-  baseGasless: "Base (Gasless)",
-  arbitrumGasless: "Arbitrum (Gasless)",
-  optimismGasless: "Optimism (Gasless)",
-  polygonGasless: "Polygon (Gasless)",
-  sepoliaGasless: "Sepolia (Gasless)",
-  baseSepoliaGasless: "Base Sepolia (Gasless)",
+  ethereumGasless: "Ethereum",
+  baseGasless: "Base",
+  arbitrumGasless: "Arbitrum",
+  optimismGasless: "Optimism",
+  polygonGasless: "Polygon",
+  sepoliaGasless: "Sepolia",
+  baseSepoliaGasless: "Base Sepolia",
 };
 
 // EIP-7702 chain ID mapping
@@ -264,6 +266,8 @@ const mapToZerionChain = (chain: string): string => {
 };
 
 export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }: SendCryptoModalProps) {
+  // Get chain icon
+  const ChainIcon = useTokenIcon(chain);
   const [tokens, setTokens] = useState<TokenBalance[]>([]);
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
   const [amount, setAmount] = useState("");
@@ -406,6 +410,23 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
     const num = parseFloat(balance);
     if (isNaN(num)) return "0";
     return (num / Math.pow(10, decimals)).toFixed(6).replace(/\.?0+$/, "");
+  };
+
+  // Handle pasting from clipboard
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.trim()) {
+        setRecipientAddress(text.trim());
+        // Clear any existing address errors when pasting
+        if (fieldErrors.address) {
+          setFieldErrors({ ...fieldErrors, address: undefined });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to read clipboard:', err);
+      setError('Failed to read clipboard. Please paste manually.');
+    }
   };
 
   const handleSend = async () => {
@@ -563,10 +584,11 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-white/10 bg-black/90 text-white shadow-2xl backdrop-blur sm:max-w-[300px] p-0 rounded-2xl">
+      <DialogContent className="border-white/10 bg-black/90 text-white shadow-2xl backdrop-blur sm:max-w-[300px] p-0 rounded-2xl [&>button]:text-white [&>button]:hover:text-white [&>button]:hover:bg-white/20 [&>button]:opacity-100">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="text-xl font-semibold flex items-center gap-2">
-            Send {chainName}
+            <ChainIcon className="h-6 w-6" />
+            {chainName}
             {isEip7702Chain(chain) && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
                 <Zap className="h-3 w-3" />
@@ -651,19 +673,30 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
           {/* Recipient Address Input */}
           <div className="space-y-1.5">
             <Label htmlFor="recipient" className="text-xs font-medium text-white/80">Recipient</Label>
-            <Input
-              id="recipient"
-              placeholder="Enter address"
-              value={recipientAddress}
-              onChange={(e) => {
-                setRecipientAddress(e.target.value);
-                if (fieldErrors.address) {
-                  setFieldErrors({ ...fieldErrors, address: undefined });
-                }
-              }}
-              disabled={loading}
-              className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/20"
-            />
+            <div className="relative">
+              <Input
+                id="recipient"
+                placeholder="Enter address"
+                value={recipientAddress}
+                onChange={(e) => {
+                  setRecipientAddress(e.target.value);
+                  if (fieldErrors.address) {
+                    setFieldErrors({ ...fieldErrors, address: undefined });
+                  }
+                }}
+                disabled={loading}
+                className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:ring-white/20 pr-10"
+              />
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                disabled={loading}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:cursor-not-allowed rounded-lg transition-colors"
+                title="Paste from clipboard"
+              >
+                <Clipboard className="h-4 w-4 text-white/70" />
+              </button>
+            </div>
             {fieldErrors.address && (
               <p className="text-xs text-red-400 flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />
