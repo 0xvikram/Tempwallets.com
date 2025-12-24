@@ -73,7 +73,7 @@ export function useEvmWalletConnect(userId: string | null): UseEvmWalletConnectR
 
     // If userId changed, reset the global client to force re-initialization
     if (globalWalletKit && globalWalletKitUserId !== userId) {
-      logger.log(`UserId changed from ${globalWalletKitUserId} to ${userId}, resetting WalletConnect client`);
+      logger.info(`UserId changed from ${globalWalletKitUserId} to ${userId}, resetting WalletConnect client`);
       globalWalletKit = null;
       globalWalletKitUserId = null;
       isInitializedRef.current = false;
@@ -469,7 +469,7 @@ export function useEvmWalletConnect(userId: string | null): UseEvmWalletConnectR
 
     // If userId changed, reset and re-initialize
     if (globalWalletKit && globalWalletKitUserId !== userId) {
-      logger.log(`UserId changed from ${globalWalletKitUserId} to ${userId}, re-initializing WalletConnect`);
+      logger.info(`UserId changed from ${globalWalletKitUserId} to ${userId}, re-initializing WalletConnect`);
       globalWalletKit = null;
       globalWalletKitUserId = null;
       isInitializedRef.current = false;
