@@ -153,6 +153,7 @@ export class ZerionService {
     polygonErc4337: 'polygon',
     ethereumErc4337: 'eth', // ERC-4337 uses same address as ethereum
     avalancheErc4337: 'avalanche',
+    sepolia: 'eth-sepolia', // Sepolia testnet
     // Note: Zerion may not support all chains (tron, bitcoin, solana)
     // We'll handle gracefully
     tron: 'tron',
@@ -169,6 +170,7 @@ export class ZerionService {
     'polygon',
     'avalanche',
     'sol',
+    'eth-sepolia', // Sepolia testnet support
   ];
 
   constructor(private configService: ConfigService) {
@@ -184,6 +186,36 @@ export class ZerionService {
         'Get your API key from: https://zerion.io/api or https://developers.zerion.io',
       );
     }
+  }
+
+  /**
+   * Normalize Zerion chain IDs to internal chain names
+   * Maps Zerion's chain identifiers to the backend's expected chain names
+   */
+  private normalizeZerionChainId(zerionChainId: string): string {
+    const chainMapping: Record<string, string> = {
+      'eth': 'ethereum',
+      'ethereum': 'ethereum',
+      'base': 'base',
+      'arbitrum': 'arbitrum',
+      'optimism': 'optimism',
+      'polygon': 'polygon',
+      'matic': 'polygon',
+      'avalanche': 'avalanche',
+      'avax': 'avalanche',
+      'bnb': 'bnb',
+      'bsc': 'bnb',
+      'solana': 'solana',
+      'sol': 'solana',
+      'bitcoin': 'bitcoin',
+      'btc': 'bitcoin',
+      'tron': 'tron',
+      'trx': 'tron',
+      'sepolia': 'sepolia',
+      'eth-sepolia': 'sepolia', // Zerion's Sepolia chain ID
+    };
+
+    return chainMapping[zerionChainId.toLowerCase()] || zerionChainId;
   }
 
   /**
@@ -229,7 +261,10 @@ export class ZerionService {
         const attributes = pos.attributes;
         const fungibleInfo = attributes?.fungible_info;
         const quantity = attributes?.quantity;
-        const chain = pos.relationships?.chain?.data?.id || 'unknown';
+        const rawChain = pos.relationships?.chain?.data?.id || 'unknown';
+
+        // Normalize Zerion chain ID to internal chain name (e.g., "eth" -> "ethereum")
+        const chain = this.normalizeZerionChainId(rawChain);
 
         // KISS parsing: Always use Zerion's decimals, never default to 18
         const decimals =

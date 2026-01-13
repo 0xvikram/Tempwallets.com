@@ -1,10 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Zap, Copy, ArrowRightLeft, Plus, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Zap, Copy, ArrowRightLeft, Plus, Minus, Wallet, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@repo/ui/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@repo/ui/components/ui/tooltip';
 import { lightningNodeApi, LightningNode, LightningNodeParticipant, walletApi } from '@/lib/api';
 import { TransferFundsModal } from '../modals/transfer-funds-modal';
+import { DepositFundsModal } from '../modals/deposit-funds-modal';
+import { WithdrawFundsModal } from '../modals/withdraw-funds-modal';
+import { FundChannelModal } from '../modals/fund-channel-modal';
 import { useAuth } from '@/hooks/useAuth';
 
 interface LightningNodeDetailsProps {
@@ -21,6 +25,7 @@ const CHAIN_NAMES: Record<string, string> = {
   arbitrumErc4337: 'Arbitrum Gasless',
   polygon: 'Polygon',
   polygonErc4337: 'Polygon Gasless',
+  sepolia: 'Sepolia Testnet',
 };
 
 export function LightningNodeDetails({ lightningNodeId, onClose }: LightningNodeDetailsProps) {
@@ -31,7 +36,10 @@ export function LightningNodeDetails({ lightningNodeId, onClose }: LightningNode
   const [userAddressSet, setUserAddressSet] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState(false);
   const [copiedUri, setCopiedUri] = useState(false);
+  const [fundChannelModalOpen, setFundChannelModalOpen] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [depositModalOpen, setDepositModalOpen] = useState(false);
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [showParticipants, setShowParticipants] = useState(true);
   const [showTransactions, setShowTransactions] = useState(false);
 
@@ -299,25 +307,70 @@ export function LightningNodeDetails({ lightningNodeId, onClose }: LightningNode
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons – Coming Soon */}
         {lightningNode.status === 'open' && currentParticipant && (
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              onClick={() => setTransferModalOpen(true)}
-              className="bg-gray-900 hover:bg-gray-800 text-white relative"
-              disabled={true}
-            >
-              <ArrowRightLeft className="mr-2 h-4 w-4" />
-              Transfer
-              <span className="ml-2 text-[10px] bg-gray-700 px-2 py-0.5 rounded-full">
-                Coming Soon
-              </span>
-            </Button>
+          <div className="space-y-3">
+            <TooltipProvider>
+              {/* Primary Actions: Deposit, Transfer, Withdraw */}
+              <div className="grid grid-cols-3 gap-3">
+                <Tooltip delayDuration={150}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled
+                      className="border-blue-200 text-blue-500 bg-blue-50 cursor-not-allowed opacity-80"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Deposit
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-black/80 text-white text-xs px-3 py-2 rounded-md border border-white/10 max-w-xs">
+                    <p>Coming soon: depositing additional funds into this Lightning Node will be available later.</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip delayDuration={150}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      className="bg-gray-300 text-gray-700 cursor-not-allowed opacity-80"
+                      disabled
+                    >
+                      <ArrowRightLeft className="mr-2 h-4 w-4" />
+                      Transfer
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-black/80 text-white text-xs px-3 py-2 rounded-md border border-white/10 max-w-xs">
+                    <p>Coming soon: transferring funds between participants is not yet available.</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip delayDuration={150}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled
+                      className="border-orange-200 text-orange-600 bg-orange-50 cursor-not-allowed opacity-80"
+                    >
+                      <Minus className="mr-2 h-4 w-4" />
+                      Withdraw
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-black/80 text-white text-xs px-3 py-2 rounded-md border border-white/10 max-w-xs">
+                    <p>Coming soon: withdrawing funds back to unified balance will be enabled in production soon.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+
+            {/* Secondary Action: Close Node (still functional) */}
             <Button
               onClick={handleCloseNode}
               variant="outline"
-              className="text-gray-900 border-gray-300 hover:bg-gray-100"
-              disabled={true}
+              className="w-full text-gray-900 border-gray-300 hover:bg-gray-100"
+              disabled={loading}
             >
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -454,14 +507,42 @@ export function LightningNodeDetails({ lightningNodeId, onClose }: LightningNode
         )}
       </div>
 
-      {/* Transfer Modal */}
+      {/* Modals */}
       {currentParticipant && (
-        <TransferFundsModal
-          open={transferModalOpen}
-          onOpenChange={setTransferModalOpen}
-          lightningNode={lightningNode}
-          onTransferComplete={refreshDetails}
-        />
+        <>
+          {/* Fund Channel Modal (On-Chain) */}
+          <FundChannelModal
+            open={fundChannelModalOpen}
+            onOpenChange={setFundChannelModalOpen}
+            chain={lightningNode.chain}
+            asset={lightningNode.token}
+            onFundComplete={refreshDetails}
+          />
+
+          {/* Deposit Modal */}
+          <DepositFundsModal
+            open={depositModalOpen}
+            onOpenChange={setDepositModalOpen}
+            lightningNode={lightningNode}
+            onDepositComplete={refreshDetails}
+          />
+
+          {/* Transfer Modal */}
+          <TransferFundsModal
+            open={transferModalOpen}
+            onOpenChange={setTransferModalOpen}
+            lightningNode={lightningNode}
+            onTransferComplete={refreshDetails}
+          />
+
+          {/* Withdraw Modal */}
+          <WithdrawFundsModal
+            open={withdrawModalOpen}
+            onOpenChange={setWithdrawModalOpen}
+            lightningNode={lightningNode}
+            onWithdrawComplete={refreshDetails}
+          />
+        </>
       )}
     </>
   );

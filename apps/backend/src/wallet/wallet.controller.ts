@@ -18,6 +18,7 @@ import { WalletService } from './wallet.service.js';
 import {
   CreateOrImportSeedDto,
   SendCryptoDto,
+  SendEip7702Dto,
   WalletConnectSignDto,
 } from './dto/wallet.dto.js';
 import { PolkadotEvmRpcService } from './services/polkadot-evm-rpc.service.js';
@@ -26,6 +27,8 @@ import { AllChainTypes } from './types/chain.types.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator.js';
 import { UserId } from '../auth/decorators/user-id.decorator.js';
+import { AllChainTypes } from './types/chain.types.js';
+import { PimlicoConfigService } from './config/pimlico.config.js';
 
 @Controller('wallet')
 @UseGuards(JwtAuthGuard)
@@ -36,7 +39,73 @@ export class WalletController {
   constructor(
     private readonly walletService: WalletService,
     private readonly polkadotEvmRpcService: PolkadotEvmRpcService,
+    private readonly pimlicoConfig: PimlicoConfigService,
   ) {}
+
+  @Post('eip7702/send')
+  @HttpCode(HttpStatus.OK)
+  async sendEip7702Gasless(
+    @Body() dto: SendEip7702Dto,
+    @UserId() userId?: string,
+  ) {
+    const finalUserId = userId || dto.userId;
+    if (!finalUserId) {
+      throw new BadRequestException('userId is required');
+    }
+
+    const result = await this.walletService.sendEip7702Gasless(
+      finalUserId,
+      dto.chainId,
+      dto.recipientAddress,
+      dto.amount,
+      dto.tokenAddress,
+      dto.tokenDecimals,
+    );
+
+    return result;
+  }
+
+  @Get('eip7702/test/:chain')
+  @HttpCode(HttpStatus.OK)
+  async testEip7702Support(@Param('chain') chain: string) {
+    const validChains = [
+      'ethereum',
+      'sepolia',
+      'base',
+      'arbitrum',
+      'optimism',
+      'polygon',
+      'bnb',
+      'avalanche',
+    ] as const;
+
+    if (!validChains.includes(chain as any)) {
+      throw new BadRequestException(
+        `Invalid chain: ${chain}. Supported chains: ${validChains.join(', ')}`,
+      );
+    }
+
+    const validation = await this.pimlicoConfig.validateEip7702Support(
+      chain as any,
+    );
+
+    return {
+      chain,
+      supported: validation.supported,
+      errors: validation.errors,
+      config: validation.config
+        ? {
+            chainId: validation.config.chainId,
+            bundlerUrl: validation.config.bundlerUrl,
+            paymasterUrl: validation.config.paymasterUrl,
+            delegationAddress: validation.config.delegationAddress,
+            entryPointAddress: validation.config.entryPointAddress,
+            hasApiKey: this.pimlicoConfig.hasPimlicoApiKey(),
+          }
+        : undefined,
+      enabled: this.pimlicoConfig.isEip7702Enabled(chain),
+    };
+  }
 
   @Post('seed')
   async createOrImportSeed(
@@ -220,6 +289,10 @@ export class WalletController {
     }
   }
 
+  /**
+   * @deprecated Use /walletconnect/accounts instead (new unified WalletConnect module)
+   * This endpoint is kept for backward compatibility but will be removed in a future version
+   */
   @Get('walletconnect/accounts')
   async getWalletConnectAccounts(
     @UserId() userId?: string,
@@ -230,7 +303,7 @@ export class WalletController {
       throw new BadRequestException('userId is required');
     }
 
-    this.logger.log(`Getting WalletConnect accounts for user ${finalUserId}`);
+    this.logger.warn(`Deprecated endpoint /wallet/walletconnect/accounts called. Use /walletconnect/accounts instead.`);
 
     try {
       const namespaces =
@@ -339,14 +412,16 @@ export class WalletController {
       throw new BadRequestException('userId is required');
     }
 
+    const chain = dto.chain as AllChainTypes;
+
     this.logger.log(
-      `Sending crypto for user ${finalUserId} on chain ${dto.chain}`,
+      `Sending crypto for user ${finalUserId} on chain ${chain}`,
     );
 
     try {
       const result = await this.walletService.sendCrypto(
         finalUserId,
-        dto.chain as AllChainTypes,
+  chain,
         dto.recipientAddress,
         dto.amount,
         dto.tokenAddress,
@@ -587,6 +662,10 @@ export class WalletController {
     }
   }
 
+  /**
+   * @deprecated Use /walletconnect/sign instead (new unified WalletConnect module)
+   * This endpoint is kept for backward compatibility but will be removed in a future version
+   */
   @Post('walletconnect/sign')
   @HttpCode(HttpStatus.OK)
   async signWalletConnectTransaction(
@@ -597,6 +676,8 @@ export class WalletController {
     if (!finalUserId) {
       throw new BadRequestException('userId is required');
     }
+
+    this.logger.warn(`Deprecated endpoint /wallet/walletconnect/sign called. Use /walletconnect/sign instead.`);
 
     this.logger.log(
       `Signing WalletConnect transaction for user ${finalUserId} on chain ${dto.chainId}`,

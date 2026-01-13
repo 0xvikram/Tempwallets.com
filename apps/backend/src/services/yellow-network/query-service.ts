@@ -21,6 +21,7 @@ import type {
   ChannelWithState,
   RPCRequest,
 } from './types.js';
+import { StateIntent } from './types.js';
 
 /**
  * Query Service
@@ -145,27 +146,88 @@ export class QueryService {
 
     request = await this.auth.signRequest(request);
     const response = await this.ws.send(request);
+    
+    // Log full response for debugging
+    console.log('[QueryService] Full get_channels response:', JSON.stringify(response, null, 2));
+    
+    // Check for errors in response
+    if (response.error) {
+      console.error('[QueryService] Error in get_channels response:', response.error.message);
+      throw new Error(`Yellow Network error: ${response.error.message}`);
+    }
+    
+    if (response.res && response.res[1] === 'error') {
+      console.error('[QueryService] Error in get_channels response:', response.res[2]);
+      throw new Error(`Yellow Network error: ${JSON.stringify(response.res[2])}`);
+    }
+    
     const channelsData = response.res[2];
+    
+    if (!channelsData) {
+      console.warn('[QueryService] No channels data in response. Returning empty array.');
+      return [];
+    }
+
+    // Check if channels array exists
+    if (!channelsData.channels || !Array.isArray(channelsData.channels)) {
+      console.warn(
+        `[QueryService] Invalid response structure: 'channels' is missing or not an array. ` +
+        `Response keys: ${Object.keys(channelsData).join(', ')}. ` +
+        `Returning empty array.`
+      );
+      return [];
+    }
 
     const channels: ChannelWithState[] = channelsData.channels.map(
-      (c: any) => ({
-        participants: [c.participants[0], c.participants[1]],
-        adjudicator: c.adjudicator,
-        challenge: BigInt(c.challenge),
-        nonce: BigInt(c.nonce),
-        channelId: c.channel_id,
-        state: {
-          intent: c.state.intent,
-          version: BigInt(c.state.version),
-          data: c.state.data,
-          allocations: c.state.allocations.map((a: any) => [
-            BigInt(a[0]),
-            BigInt(a[1]),
-          ]),
-        },
-        chainId: c.chain_id,
-        status: c.status,
-      }),
+      (c: any) => {
+        // get_channels returns simplified structure with 'participant' (singular), not 'participants' array
+        // We need to construct the participants array: [user, clearnode]
+        // Since we don't have clearnode address in get_channels response, we'll use the participant
+        // as the first element and construct a minimal structure
+        // Note: This is a limitation of get_channels - full channel details require create_channel response
+        
+        let participants: [Address, Address];
+        if (c.participants && Array.isArray(c.participants) && c.participants.length >= 2) {
+          // Full structure from create_channel response
+          participants = [c.participants[0] as Address, c.participants[1] as Address];
+        } else if (c.participant) {
+          // Simplified structure from get_channels - only has user address
+          // We need to construct participants array, but we don't have clearnode address
+          // For now, we'll use the participant address for both (this is a workaround)
+          // The actual clearnode address should be obtained from config or channel creation
+          const userAddress = c.participant as Address;
+          // TODO: Get clearnode address from config or channel details
+          // For now, using user address as placeholder (will be fixed when we have config access)
+          participants = [userAddress, userAddress]; // Temporary workaround
+          console.warn(
+            `[QueryService] get_channels returned simplified structure for channel ${c.channel_id}. ` +
+            `Using placeholder for clearnode address. Full participants array requires create_channel response.`
+          );
+        } else {
+          throw new Error(`Invalid channel structure: missing participants or participant field. Channel: ${JSON.stringify(c)}`);
+        }
+
+        return {
+          participants,
+          adjudicator: c.adjudicator as Address,
+          challenge: BigInt(c.challenge),
+          nonce: BigInt(c.nonce),
+          channelId: c.channel_id as `0x${string}`,
+          state: {
+            intent: (c.state?.intent ?? StateIntent.INITIALIZE) as StateIntent,
+            version: BigInt(c.version ?? c.state?.version ?? 0),
+            data: c.state?.data ?? '0x',
+            allocations: c.state?.allocations
+              ? c.state.allocations.map((a: any, idx: number) => [
+                  BigInt(Array.isArray(a) ? a[0] : (a.index !== undefined ? a.index : idx)),
+                  BigInt(Array.isArray(a) ? a[1] : a.amount || 0),
+                ])
+              : [[BigInt(0), BigInt(0)], [BigInt(1), BigInt(0)]], // Default zero allocations
+          },
+          chainId: c.chain_id,
+          status: c.status,
+        };
+      },
     );
 
     console.log(`[QueryService] Found ${channels.length} payment channels`);

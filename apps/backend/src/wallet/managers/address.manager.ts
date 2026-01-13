@@ -9,8 +9,8 @@ import {
 import { AllChainTypes } from '../types/chain.types.js';
 import { SeedManager } from './seed.manager.js';
 import { AccountFactory } from '../factories/account.factory.js';
-// import { NativeEoaFactory } from '../factories/native-eoa.factory.js'; // TODO: Implement EIP-7702 support
-// import { Eip7702AccountFactory } from '../factories/eip7702-account.factory.js'; // TODO: Implement EIP-7702 support
+import { NativeEoaFactory } from '../factories/native-eoa.factory.js';
+import { Eip7702AccountFactory } from '../factories/eip7702-account.factory.js';
 import { SubstrateManager } from '../substrate/managers/substrate.manager.js';
 import { AddressCacheRepository } from '../repositories/address-cache.repository.js';
 import { AptosAddressManager } from '../aptos/managers/aptos-address.manager.js';
@@ -59,8 +59,8 @@ export class AddressManager implements IAddressManager {
   constructor(
     private seedManager: SeedManager,
     private accountFactory: AccountFactory,
-    // private nativeEoaFactory: NativeEoaFactory, // TODO: Implement EIP-7702 support
-    // private eip7702AccountFactory: Eip7702AccountFactory, // TODO: Implement EIP-7702 support
+    private nativeEoaFactory: NativeEoaFactory,
+    private eip7702AccountFactory: Eip7702AccountFactory,
     @Inject(forwardRef(() => SubstrateManager))
     private substrateManager: SubstrateManager,
     private addressCacheRepository: AddressCacheRepository,
@@ -140,7 +140,7 @@ export class AddressManager implements IAddressManager {
     // EOA chains
     const evmChains: Array<
       'ethereum' | 'base' | 'arbitrum' | 'polygon' | 'avalanche' | 'sepolia'
-    > = ['ethereum', 'base', 'arbitrum', 'polygon', 'avalanche'];
+    > = ['ethereum', 'base', 'arbitrum', 'polygon', 'avalanche', 'sepolia'];
 
     for (const chain of evmChains) {
       if (addresses[chain]) {
@@ -148,9 +148,15 @@ export class AddressManager implements IAddressManager {
       }
 
       try {
-        // Use standard account factory (EIP-7702 not yet implemented)
-        // TODO: Implement EIP-7702 support
-        const account = await this.accountFactory.createAccount(seedPhrase, chain, 0);
+        // Use EIP-7702 factory for enabled chains (same address as EOA), else native EOA
+        // Only enable EIP-7702 for supported chains: ethereum, sepolia, base, arbitrum, optimism
+        const supportedEip7702Chains = ['ethereum', 'sepolia', 'base', 'arbitrum', 'optimism'];
+        const useEip7702 =
+          this.pimlicoConfig.isEip7702Enabled(chain) &&
+          supportedEip7702Chains.includes(chain);
+        const account = useEip7702
+          ? await this.eip7702AccountFactory.createAccount(seedPhrase, chain as 'ethereum' | 'sepolia' | 'base' | 'arbitrum' | 'optimism', 0)
+          : await this.nativeEoaFactory.createAccount(seedPhrase, chain, 0);
 
         const address = await account.getAddress();
         addresses[chain] = address as any;
@@ -413,6 +419,7 @@ export class AddressManager implements IAddressManager {
       { name: 'arbitrum', chain: 'arbitrum' },
       { name: 'polygon', chain: 'polygon' },
       { name: 'avalanche', chain: 'avalanche' },
+      { name: 'sepolia', chain: 'sepolia' },
     ];
 
     for (const { name, chain } of evmChains) {
@@ -421,9 +428,14 @@ export class AddressManager implements IAddressManager {
       }
 
       try {
-        // Use standard account factory (EIP-7702 not yet implemented)
-        // TODO: Implement EIP-7702 support
-        const account = await this.accountFactory.createAccount(seedPhrase, chain, 0);
+        // Only enable EIP-7702 for supported chains: ethereum, sepolia, base, arbitrum, optimism
+        const supportedEip7702Chains = ['ethereum', 'sepolia', 'base', 'arbitrum', 'optimism'];
+        const useEip7702 =
+          this.pimlicoConfig.isEip7702Enabled(chain) &&
+          supportedEip7702Chains.includes(chain);
+        const account = useEip7702
+          ? await this.eip7702AccountFactory.createAccount(seedPhrase, chain as 'ethereum' | 'sepolia' | 'base' | 'arbitrum' | 'optimism', 0)
+          : await this.nativeEoaFactory.createAccount(seedPhrase, chain, 0);
         const address = await account.getAddress();
         await this.addressCacheRepository.saveAddress(userId, name, address);
         yield { chain: name, address };

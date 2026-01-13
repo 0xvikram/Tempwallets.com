@@ -11,14 +11,14 @@ import { ZerionService, TokenBalance } from './zerion.service.js';
 import { SeedManager } from './managers/seed.manager.js';
 import { AddressManager } from './managers/address.manager.js';
 import { AccountFactory } from './factories/account.factory.js';
-// import { NativeEoaFactory } from './factories/native-eoa.factory.js'; // TODO: Implement EIP-7702 support
-// import { Eip7702AccountFactory } from './factories/eip7702-account.factory.js'; // TODO: Implement EIP-7702 support
+import { NativeEoaFactory } from './factories/native-eoa.factory.js';
+import { Eip7702AccountFactory } from './factories/eip7702-account.factory.js';
 import { PolkadotEvmRpcService } from './services/polkadot-evm-rpc.service.js';
 import { SubstrateManager } from './substrate/managers/substrate.manager.js';
 import { SubstrateChainKey } from './substrate/config/substrate-chain.config.js';
 import { BalanceCacheRepository } from './repositories/balance-cache.repository.js';
 import { WalletHistoryRepository } from './repositories/wallet-history.repository.js';
-// import { Eip7702DelegationRepository } from './repositories/eip7702-delegation.repository.js'; // TODO: Implement EIP-7702 support
+import { Eip7702DelegationRepository } from './repositories/eip7702-delegation.repository.js';
 import { IAccount } from './types/account.types.js';
 import { AllChainTypes } from './types/chain.types.js';
 import {
@@ -65,6 +65,7 @@ export class WalletService {
     | 'arbitrum'
     | 'polygon'
     | 'avalanche'
+    | 'sepolia'
     | 'moonbeamTestnet'
     | 'astarShibuya'
     | 'paseoPassetHub'
@@ -78,6 +79,7 @@ export class WalletService {
     'arbitrum',
     'polygon',
     'avalanche',
+    'sepolia',
     'moonbeamTestnet',
     'astarShibuya',
     'paseoPassetHub',
@@ -139,14 +141,14 @@ export class WalletService {
     private seedManager: SeedManager,
     private addressManager: AddressManager,
     private accountFactory: AccountFactory,
-    // private nativeEoaFactory: NativeEoaFactory, // TODO: Implement EIP-7702 support
-    // private eip7702AccountFactory: Eip7702AccountFactory, // TODO: Implement EIP-7702 support
+    private nativeEoaFactory: NativeEoaFactory,
+    private eip7702AccountFactory: Eip7702AccountFactory,
     private polkadotEvmRpcService: PolkadotEvmRpcService,
     private substrateManager: SubstrateManager,
     private balanceCacheRepository: BalanceCacheRepository,
     private walletHistoryRepository: WalletHistoryRepository,
     private pimlicoConfig: PimlicoConfigService,
-    // private eip7702DelegationRepository: Eip7702DelegationRepository, // TODO: Implement EIP-7702 support
+    private eip7702DelegationRepository: Eip7702DelegationRepository,
   ) {}
 
   /**
@@ -367,11 +369,11 @@ export class WalletService {
     metadata: WalletAddressMetadataMap,
   ): UiWalletPayload {
     const chainsRecord = {
-      ethereumErc4337: metadata.ethereumErc4337?.address ?? null,
-      baseErc4337: metadata.baseErc4337?.address ?? null,
-      arbitrumErc4337: metadata.arbitrumErc4337?.address ?? null,
-      polygonErc4337: metadata.polygonErc4337?.address ?? null,
-      avalancheErc4337: metadata.avalancheErc4337?.address ?? null,
+      ethereum: metadata.ethereum?.address ?? null,
+      base: metadata.base?.address ?? null,
+      arbitrum: metadata.arbitrum?.address ?? null,
+      polygon: metadata.polygon?.address ?? null,
+      avalanche: metadata.avalanche?.address ?? null,
     };
 
     const canonicalChainKey = this.SMART_ACCOUNT_CHAIN_KEYS.find(
@@ -573,6 +575,7 @@ export class WalletService {
       arbitrum: 'Arbitrum',
       polygon: 'Polygon',
       avalanche: 'Avalanche',
+      sepolia: 'Sepolia Testnet',
       tron: 'Tron',
       bitcoin: 'Bitcoin',
       solana: 'Solana',
@@ -687,8 +690,7 @@ export class WalletService {
     addTarget(addresses.solana);
 
     // Include any recorded EIP-7702 delegated accounts (EOA keeps same address)
-    // TODO: Implement EIP-7702 support
-    /* try {
+    try {
       const delegations =
         await this.eip7702DelegationRepository.getDelegationsForUser(userId);
       for (const delegation of delegations) {
@@ -698,7 +700,7 @@ export class WalletService {
       this.logger.warn(
         `Failed to load EIP-7702 delegations for ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
-    } */
+    }
 
     // Polkadot EVM chains use the same EOA address as ethereum
     const polkadotEvmAddress = addresses.ethereum;
@@ -1932,19 +1934,18 @@ export class WalletService {
       'optimism',
     ];
 
-    // EIP-7702 not yet implemented (isEip7702Enabled always returns false)
-    // const isEip7702 =
-    //   this.pimlicoConfig.isEip7702Enabled(chain) &&
-    //   eip7702Chains.includes(chain);
-    //
-    // if (isEip7702) {
-    //   return this.eip7702AccountFactory.createAccount(
-    //     seedPhrase,
-    //     chain as 'ethereum' | 'sepolia' | 'base' | 'arbitrum' | 'optimism',
-    //     0,
-    //     userId,
-    //   );
-    // }
+    const isEip7702 =
+      this.pimlicoConfig.isEip7702Enabled(chain) &&
+      eip7702Chains.includes(chain);
+
+    if (isEip7702) {
+      return this.eip7702AccountFactory.createAccount(
+        seedPhrase,
+        chain as 'ethereum' | 'sepolia' | 'base' | 'arbitrum' | 'optimism',
+        0,
+        userId,
+      );
+    }
 
     const evmChains: AllChainTypes[] = [
       'ethereum',
@@ -1958,7 +1959,7 @@ export class WalletService {
     ];
 
     if (evmChains.includes(chain)) {
-      return this.accountFactory.createAccount(
+      return this.nativeEoaFactory.createAccount(
         seedPhrase,
         chain as
           | 'ethereum'
@@ -2465,18 +2466,14 @@ export class WalletService {
     }
 
     if (!this.pimlicoConfig.isEip7702Enabled(chain)) {
-      this.logger.warn(
-        `EIP-7702 is not enabled for chain ${chain}. Gasless transactions unavailable for this chain in production.`,
-      );
       throw new BadRequestException(
-        `Gasless transactions are not available for ${chain} at this time. Please use standard transfers instead.`,
+        `EIP-7702 is not enabled for chain ${chain}. Enable via config before sending gasless transactions.`,
       );
     }
 
     // Determine if this is the first delegation/transaction before sending
-    // TODO: Implement EIP-7702 support
-    const isFirstTransaction = true; // Default to true since EIP-7702 is not yet implemented
-    // const isFirstTransaction = !(await this.eip7702DelegationRepository.hasDelegation(userId, chainId));
+    const isFirstTransaction =
+      !(await this.eip7702DelegationRepository.hasDelegation(userId, chainId));
 
     const { txHash } = await this.sendCrypto(
       userId,
