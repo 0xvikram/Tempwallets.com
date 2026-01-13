@@ -230,6 +230,62 @@ const getExplorerUrl = (txHash: string, chain: string): string => {
   return '#';
 };
 
+// Component to render selected token in trigger with network icon
+interface SelectedTokenDisplayProps {
+  token: TokenBalance;
+}
+
+function SelectedTokenDisplay({ token }: SelectedTokenDisplayProps) {
+  const NetworkIcon = useTokenIcon(token.chain || 'ethereum');
+  
+  // Format balance
+  const formatBalance = (balance: string, decimals: number): string => {
+    const num = parseFloat(balance);
+    if (isNaN(num)) return "0";
+    return (num / Math.pow(10, decimals)).toFixed(6).replace(/\.?0+$/, "");
+  };
+  
+  return (
+    <div className="flex items-center gap-2">
+      <NetworkIcon className="h-4 w-4 flex-shrink-0" />
+      <span>
+        {token.symbol} - {formatBalance(token.balance, token.decimals)}
+      </span>
+    </div>
+  );
+}
+
+// Component to render token with network icon in dropdown
+interface TokenSelectItemProps {
+  value: string;
+  token: TokenBalance;
+}
+
+function TokenSelectItem({ value, token }: TokenSelectItemProps) {
+  const NetworkIcon = useTokenIcon(token.chain || 'ethereum');
+  
+  // Format balance
+  const formatBalance = (balance: string, decimals: number): string => {
+    const num = parseFloat(balance);
+    if (isNaN(num)) return "0";
+    return (num / Math.pow(10, decimals)).toFixed(6).replace(/\.?0+$/, "");
+  };
+  
+  return (
+    <SelectItem 
+      value={value}
+      className="text-sm focus:bg-white/10 focus:text-white"
+    >
+      <div className="flex items-center gap-2">
+        <NetworkIcon className="h-4 w-4 flex-shrink-0" />
+        <span className="flex-1">
+          {token.symbol} - {formatBalance(token.balance, token.decimals)}
+        </span>
+      </div>
+    </SelectItem>
+  );
+}
+
 export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }: SendCryptoModalProps) {
   // Get chain icon
   const ChainIcon = useTokenIcon(chain);
@@ -680,19 +736,21 @@ export function SendCryptoModal({ open, onOpenChange, chain, userId, onSuccess }
                 }}
               >
                 <SelectTrigger id="token" className="h-9 rounded-xl border-white/20 bg-white/5 text-sm text-white hover:bg-white/10">
-                  <SelectValue placeholder="Select token" />
+                  {selectedToken ? (
+                    <SelectedTokenDisplay token={selectedToken} />
+                  ) : (
+                    <SelectValue placeholder="Select token" />
+                  )}
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-white/20 bg-black/95 text-white">
                   {tokens.map((token) => {
                     const key = `${token.chain || 'unknown'}:${token.address || 'native'}`;
                     return (
-                      <SelectItem 
+                      <TokenSelectItem 
                         key={key}
                         value={key}
-                        className="text-sm focus:bg-white/10 focus:text-white"
-                      >
-                        {token.symbol} - {formatBalance(token.balance, token.decimals)}
-                      </SelectItem>
+                        token={token}
+                      />
                     );
                   })}
                 </SelectContent>

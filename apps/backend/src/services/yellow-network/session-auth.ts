@@ -85,7 +85,7 @@ export class SessionKeyAuth {
       allowances = [],
       application = 'tempwallets-lightning',
       expiryHours = 24,
-      scope = 'transfer,app.create,app.submit',
+      scope = 'transfer,app.create,app.submit,channel.create,channel.update,channel.close',
     } = options || {};
 
     console.log('[SessionKeyAuth] Starting authentication flow...');
@@ -370,13 +370,55 @@ export class SessionKeyAuth {
       throw new Error('Session expired. Please re-authenticate.');
     }
 
-    // Build message hash from request
-    const messageHash = keccak256(toBytes(JSON.stringify(request.req)));
+    // Helper function to remove undefined values from objects
+    const cleanParams = (obj: any): any => {
+      if (obj === null || obj === undefined) {
+        return obj;
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(cleanParams);
+      }
+      if (typeof obj === 'object') {
+        const cleaned: any = {};
+        for (const key in obj) {
+          if (obj[key] !== undefined) {
+            cleaned[key] = cleanParams(obj[key]);
+          }
+        }
+        return cleaned;
+      }
+      return obj;
+    };
 
-    // Sign with session key
-    const signature = await this.sessionKey.account.signMessage({
-      message: { raw: messageHash },
+    // Clean the entire request array to remove undefined values
+    const cleanedReq = cleanParams(request.req);
+
+    // Build message hash from request
+    const messageHash = keccak256(toBytes(JSON.stringify(cleanedReq)));
+
+    // ============================================================================
+    // CRITICAL: Use raw signing to avoid EIP-191 prefix
+    // ============================================================================
+    // Yellow Network expects raw ECDSA signature over the hash, without any prefix.
+    // Using signMessage() adds "\x19Ethereum Signed Message:\n" prefix (EIP-191),
+    // which causes signature verification to fail on Yellow Network.
+    //
+    // Use account.sign() which signs the hash directly without prefix.
+    // ============================================================================
+
+    console.log('[SessionKeyAuth] Signing request:');
+    console.log('  Request data (original):', JSON.stringify(request.req));
+    console.log('  Request data (cleaned):', JSON.stringify(cleanedReq));
+    console.log('  Message hash:', messageHash);
+    console.log('  Session key address:', this.sessionKey.account.address);
+
+    // Sign with session key - RAW signature (no EIP-191 prefix)
+    const signature = await this.sessionKey.account.sign({
+      hash: messageHash,
     });
+
+    console.log('  Signature:', signature);
+    console.log('  Signature length:', signature.length, '(should be 132: 0x + 130 hex chars)');
 
     return {
       ...request,
@@ -544,6 +586,29 @@ export class MainWalletAuth {
    * @returns Signed request with main wallet signature
    */
   async signRequest(request: RPCRequest): Promise<RPCRequest> {
+    // Helper function to remove undefined values from objects
+    const cleanParams = (obj: any): any => {
+      if (obj === null || obj === undefined) {
+        return obj;
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(cleanParams);
+      }
+      if (typeof obj === 'object') {
+        const cleaned: any = {};
+        for (const key in obj) {
+          if (obj[key] !== undefined) {
+            cleaned[key] = cleanParams(obj[key]);
+          }
+        }
+        return cleaned;
+      }
+      return obj;
+    };
+
+    // Clean params to remove undefined values
+    const cleanedParams = cleanParams(request.req[2]);
+
     // Build EIP-712 typed data for RPC request
     const typedData = {
       types: {
@@ -562,7 +627,7 @@ export class MainWalletAuth {
       message: {
         requestId: request.req[0],
         method: request.req[1],
-        params: JSON.stringify(request.req[2]),
+        params: JSON.stringify(cleanedParams),
         timestamp: request.req[3],
       },
     };

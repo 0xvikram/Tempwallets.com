@@ -67,15 +67,23 @@ export class AppSessionService {
 
     // Request app session creation
     const requestId = this.ws.getNextRequestId();
+    
+    // Build params object, excluding undefined values
+    const params: any = {
+      definition,
+      allocations,
+    };
+    
+    // Only include session_data if it's defined
+    if (sessionData !== undefined) {
+      params.session_data = sessionData;
+    }
+    
     let request: RPCRequest = {
       req: [
         requestId,
         'create_app_session',
-        {
-          definition,
-          allocations,
-          session_data: sessionData,
-        },
+        params,
         Date.now(),
       ],
       sig: [] as string[],

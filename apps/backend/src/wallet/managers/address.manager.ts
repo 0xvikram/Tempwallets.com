@@ -140,7 +140,7 @@ export class AddressManager implements IAddressManager {
     // EOA chains
     const evmChains: Array<
       'ethereum' | 'base' | 'arbitrum' | 'polygon' | 'avalanche' | 'sepolia'
-    > = ['ethereum', 'base', 'arbitrum', 'polygon', 'avalanche'];
+    > = ['ethereum', 'base', 'arbitrum', 'polygon', 'avalanche', 'sepolia'];
 
     for (const chain of evmChains) {
       if (addresses[chain]) {
@@ -419,6 +419,7 @@ export class AddressManager implements IAddressManager {
       { name: 'arbitrum', chain: 'arbitrum' },
       { name: 'polygon', chain: 'polygon' },
       { name: 'avalanche', chain: 'avalanche' },
+      { name: 'sepolia', chain: 'sepolia' },
     ];
 
     for (const { name, chain } of evmChains) {

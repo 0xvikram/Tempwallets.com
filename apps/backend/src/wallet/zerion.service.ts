@@ -153,6 +153,7 @@ export class ZerionService {
     polygonErc4337: 'polygon',
     ethereumErc4337: 'eth', // ERC-4337 uses same address as ethereum
     avalancheErc4337: 'avalanche',
+    sepolia: 'eth-sepolia', // Sepolia testnet
     // Note: Zerion may not support all chains (tron, bitcoin, solana)
     // We'll handle gracefully
     tron: 'tron',
@@ -169,6 +170,7 @@ export class ZerionService {
     'polygon',
     'avalanche',
     'sol',
+    'eth-sepolia', // Sepolia testnet support
   ];
 
   constructor(private configService: ConfigService) {
@@ -210,6 +212,7 @@ export class ZerionService {
       'tron': 'tron',
       'trx': 'tron',
       'sepolia': 'sepolia',
+      'eth-sepolia': 'sepolia', // Zerion's Sepolia chain ID
     };
 
     return chainMapping[zerionChainId.toLowerCase()] || zerionChainId;

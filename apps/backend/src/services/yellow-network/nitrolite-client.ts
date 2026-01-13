@@ -34,6 +34,7 @@ import { WebSocketManager } from './websocket-manager.js';
 import { SessionKeyAuth, MainWallet } from './session-auth.js';
 import { ConfigLoader } from './config-loader.js';
 import { ChannelService } from './channel-service.js';
+import { SDKChannelService } from './sdk-channel-service.js';
 import { AppSessionService } from './app-session-service.js';
 import { QueryService } from './query-service.js';
 import type {
@@ -62,9 +63,12 @@ export class NitroliteClient {
   private ws: WebSocketManager;
   private auth: SessionKeyAuth;
   private configLoader: ConfigLoader;
-  private channelService: ChannelService;
+  private channelService: ChannelService | SDKChannelService;
   private appSessionService: AppSessionService;
   private queryService: QueryService;
+
+  // SDK configuration
+  private useSDK: boolean;
 
   // State
   private initialized = false;
@@ -77,6 +81,7 @@ export class NitroliteClient {
     walletClient: WalletClient;
     useSessionKeys?: boolean;
     application?: string;
+    useSDK?: boolean; // NEW: Use Yellow Network SDK
   }) {
     this.config = {
       wsUrl: options.wsUrl,
@@ -87,6 +92,7 @@ export class NitroliteClient {
     this.mainWallet = options.mainWallet;
     this.publicClient = options.publicClient;
     this.walletClient = options.walletClient;
+    this.useSDK = options.useSDK ?? false; // TEMPORARILY DISABLED: SDK appears to be for Sepolia only
 
     // Initialize WebSocket Manager
     this.ws = new WebSocketManager({
@@ -117,6 +123,29 @@ export class NitroliteClient {
    * 2. Loads contract addresses dynamically
    * 3. Authenticates with session key (if enabled)
    */
+  /**
+   * Post-reconnect sync: Re-load channels and app sessions after WebSocket reconnection
+   * 
+   * This is called automatically after WebSocket reconnects to ensure state consistency.
+   */
+  async postReconnectSync(): Promise<void> {
+    console.log('[NitroliteClient] Post-reconnect sync: Re-loading state...');
+    
+    try {
+      // Re-fetch channels to ensure we have latest state
+      const channels = await this.queryService.getChannels();
+      console.log(`[NitroliteClient] Post-reconnect: Re-loaded ${channels.length} channels`);
+      
+      // Note: App sessions are fetched on-demand, so we don't need to pre-load them
+      // The next operation that needs them will fetch fresh state
+      
+      console.log('[NitroliteClient] ✅ Post-reconnect sync completed');
+    } catch (error) {
+      console.warn('[NitroliteClient] Post-reconnect sync failed (non-critical):', error);
+      // Don't throw - this is best-effort
+    }
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) {
       // Initialization logs moved to debug level
@@ -126,6 +155,24 @@ export class NitroliteClient {
     // Initialization logs moved to debug level
 
     // Step 1: Connect to WebSocket
+    // Set up reconnection handlers for post-reconnect sync
+    // DEFENSIVE GUARD: Handle WebSocket disconnects with re-sync
+    this.ws.on('connect', async () => {
+      // After reconnection, re-sync state
+      if (this.initialized) {
+        // Only sync if we were already initialized (this is a reconnect, not initial connect)
+        await this.postReconnectSync();
+      }
+    });
+    
+    this.ws.on('disconnect', () => {
+      console.warn('[NitroliteClient] WebSocket disconnected. Will attempt reconnection...');
+    });
+    
+    this.ws.on('error', (error) => {
+      console.error('[NitroliteClient] WebSocket error:', error);
+    });
+    
     await this.ws.connect();
     // Connection success logged at debug level
 
@@ -133,20 +180,49 @@ export class NitroliteClient {
     this.clearnodeConfig = await this.configLoader.loadConfig();
     // Config loaded logged at debug level
 
-    // Initialize Channel Service with loaded addresses
-    this.channelService = new ChannelService(
-      this.ws,
-      this.auth,
-      this.publicClient,
-      this.walletClient,
-      this.clearnodeConfig.networks.reduce(
-        (acc, n) => {
-          acc[n.chain_id] = n.custody_address;
-          return acc;
-        },
-        {} as Record<number, Address>,
-      ),
+    // Build custody addresses map
+    const custodyAddresses = this.clearnodeConfig.networks.reduce(
+      (acc, n) => {
+        acc[n.chain_id] = n.custody_address;
+        return acc;
+      },
+      {} as Record<number, Address>,
     );
+
+    // Initialize Channel Service (SDK or Custom)
+    if (this.useSDK) {
+      console.log('[NitroliteClient] Using Yellow Network SDK for channel operations');
+
+      // For SDK, we need to pick a primary chain. We'll use the first one or Base (8453) if available.
+      const baseNetwork = this.clearnodeConfig.networks.find(n => n.chain_id === 8453);
+      const primaryNetwork = baseNetwork || this.clearnodeConfig.networks[0];
+
+      if (!primaryNetwork) {
+        throw new Error('No networks found in config');
+      }
+
+      this.channelService = new SDKChannelService(
+        this.ws,
+        this.auth,
+        this.publicClient,
+        this.walletClient,
+        custodyAddresses,
+        primaryNetwork.adjudicator_address,
+        primaryNetwork.chain_id,
+      );
+
+      console.log(`[NitroliteClient] SDK initialized for chain ${primaryNetwork.chain_id}`);
+    } else {
+      console.log('[NitroliteClient] Using custom implementation for channel operations');
+
+      this.channelService = new ChannelService(
+        this.ws,
+        this.auth,
+        this.publicClient,
+        this.walletClient,
+        custodyAddresses,
+      );
+    }
 
     // Step 3: Authenticate with session key (if enabled)
     if (this.config.useSessionKeys) {
@@ -155,6 +231,7 @@ export class NitroliteClient {
         application: this.config.application,
         allowances: [], // Empty = unrestricted session (Yellow Network requirement)
         expiryHours: 24,
+        scope: 'transfer,app.create,app.submit,channel.create,channel.update,channel.close', // Include all channel operations
       });
       // Authentication success logged at debug level
     }
@@ -195,15 +272,21 @@ export class NitroliteClient {
    * @param channelId - Channel identifier
    * @param chainId - Blockchain chain ID
    * @param amount - Amount to add (positive) or remove (negative)
+   * @param fundsDestination - Destination address for funds (typically user's wallet)
+   * @param token - Optional token address (recommended for proper allocation format)
+   * @param participants - Optional channel participants (recommended for proper allocation format)
    * @returns Updated channel state
    */
   async resizeChannel(
     channelId: Hash,
     chainId: number,
     amount: bigint,
+    fundsDestination: Address,
+    token?: Address,
+    participants?: [Address, Address],
   ): Promise<void> {
     this.ensureInitialized();
-    await this.channelService.resizeChannel(channelId, chainId, amount);
+    await this.channelService.resizeChannel(channelId, chainId, amount, fundsDestination, token, participants);
   }
 
   /**
@@ -212,17 +295,23 @@ export class NitroliteClient {
    * @param channelId - Channel identifier
    * @param chainId - Blockchain chain ID
    * @param fundsDestination - Address to send funds to
+   * @param token - Optional token address (recommended for proper allocation format)
+   * @param participants - Optional channel participants (recommended for proper allocation format)
    */
   async closeChannel(
     channelId: Hash,
     chainId: number,
     fundsDestination: Address,
+    token?: Address,
+    participants?: [Address, Address],
   ): Promise<void> {
     this.ensureInitialized();
     await this.channelService.closeChannel(
       channelId,
       chainId,
       fundsDestination,
+      token,
+      participants,
     );
   }
 
@@ -254,6 +343,18 @@ export class NitroliteClient {
       initialAllocations = [],
       sessionData,
     } = options;
+
+    // Ensure authentication is valid before creating app session
+    if (!this.auth.isAuthenticated()) {
+      console.log('[NitroliteClient] Session expired or not authenticated, re-authenticating...');
+      await this.auth.authenticate({
+        application: this.config.application,
+        allowances: [],
+        expiryHours: 24,
+        scope: 'transfer,app.create,app.submit,channel.create,channel.update,channel.close',
+      });
+      console.log('[NitroliteClient] ✅ Re-authentication successful');
+    }
 
     const definition: AppDefinition = {
       protocol: 'NitroRPC/0.4',
@@ -401,6 +502,15 @@ export class NitroliteClient {
   async getChannels(): Promise<ChannelWithState[]> {
     this.ensureInitialized();
     return await this.queryService.getChannels();
+  }
+
+  /**
+   * Re-sync channel state (re-fetch from Yellow Network)
+   * Used when channel data is missing or inconsistent
+   */
+  async resyncChannelState(chainId: number): Promise<ChannelWithState | null> {
+    this.ensureInitialized();
+    return await this.channelService.resyncChannelState(chainId);
   }
 
   /**

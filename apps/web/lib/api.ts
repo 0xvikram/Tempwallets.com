@@ -221,6 +221,20 @@ export interface JoinLightningNodeResponse {
   node: LightningNode;
 }
 
+// Fund Channel (Add to Unified Balance)
+export interface FundChannelRequest {
+  userId: string;
+  chain: string;
+  asset: string;
+  amount: string;
+}
+
+export interface FundChannelResponse {
+  ok: boolean;
+  channelId?: string;
+  message?: string;
+}
+
 // Deposit Funds
 export interface DepositFundsRequest {
   userId: string;
@@ -249,6 +263,20 @@ export interface TransferFundsResponse {
   ok: boolean;
   senderNewBalance: string;
   recipientNewBalance: string;
+}
+
+// Withdraw Funds
+export interface WithdrawFundsRequest {
+  userId: string;
+  appSessionId: string;
+  participantAddress: string;
+  amount: string;
+  asset: string;
+}
+
+export interface WithdrawFundsResponse {
+  ok: boolean;
+  newBalance: string;
 }
 
 // Close Lightning Node
@@ -1408,7 +1436,19 @@ export const lightningNodeApi = {
   },
 
   /**
+   * Fund payment channel (add funds to unified balance)
+   * This moves funds from on-chain wallet to unified balance (requires on-chain transaction)
+   */
+  async fundChannel(data: FundChannelRequest): Promise<FundChannelResponse> {
+    return fetchApi<FundChannelResponse>('/lightning-node/fund-channel', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
    * Deposit funds to Lightning Node
+   * Moves funds from unified balance to app session (gasless)
    */
   async depositFunds(data: DepositFundsRequest): Promise<DepositFundsResponse> {
     return fetchApi<DepositFundsResponse>('/lightning-node/deposit', {
@@ -1422,6 +1462,16 @@ export const lightningNodeApi = {
    */
   async transferFunds(data: TransferFundsRequest): Promise<TransferFundsResponse> {
     return fetchApi<TransferFundsResponse>('/lightning-node/transfer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Withdraw funds from Lightning Node back to unified balance
+   */
+  async withdrawFunds(data: WithdrawFundsRequest): Promise<WithdrawFundsResponse> {
+    return fetchApi<WithdrawFundsResponse>('/lightning-node/withdraw', {
       method: 'POST',
       body: JSON.stringify(data),
     });

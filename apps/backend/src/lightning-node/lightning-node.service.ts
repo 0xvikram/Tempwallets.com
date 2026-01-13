@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service.js';
 import {
   createPublicClient,
+  createWalletClient,
   http,
   type Address,
   type PublicClient,
@@ -26,11 +27,13 @@ import type {
 import type {
   CreateLightningNodeDto,
   DepositFundsDto,
+  WithdrawFundsDto,
   TransferFundsDto,
   CloseLightningNodeDto,
   JoinLightningNodeDto,
   AuthenticateWalletDto,
   SearchSessionDto,
+  FundChannelDto,
 } from './dto/index.js';
 import { SeedRepository } from '../wallet/seed.repository.js';
 import { WalletService } from '../wallet/wallet.service.js';
@@ -135,14 +138,12 @@ export class LightningNodeService {
   /**
    * Create a viem EOA account from user's seed phrase for signing
    * This uses the normal EVM wallet (EOA) which has a private key
+   * Returns the full viem account with all signing methods
    */
   private async createEOASignerAccount(
     userId: string,
     chainName: string,
-  ): Promise<{
-    address: Address;
-    signTypedData: (typedData: any) => Promise<string>;
-  }> {
+  ): Promise<ReturnType<typeof mnemonicToAccount>> {
     try {
       // Get user's seed phrase
       const seedPhrase = await this.seedRepository.getSeedPhrase(userId);
@@ -151,7 +152,11 @@ export class LightningNodeService {
       const baseChain = this.getBaseChainName(chainName);
 
       // Create viem account from mnemonic (uses HD path: m/44'/60'/0'/0/0)
-      // This gives us access to the private key for signing
+      // This gives us access to the private key for ALL signing operations:
+      // - signMessage (EIP-191)
+      // - signTypedData (EIP-712)
+      // - signTransaction (for sending txs)
+      // - sign (raw hash signing for smart contracts)
       const account = mnemonicToAccount(seedPhrase, {
         accountIndex: 0,
         addressIndex: 0,
@@ -161,19 +166,8 @@ export class LightningNodeService {
         `Created EOA signer account ${account.address} for user ${userId} on ${baseChain}`,
       );
 
-      // Return a wrapper that provides signTypedData
-      return {
-        address: account.address,
-        signTypedData: async (typedData: any) => {
-          // Viem requires typed data to be destructured
-          return await account.signTypedData({
-            domain: typedData.domain,
-            types: typedData.types,
-            primaryType: typedData.primaryType,
-            message: typedData.message,
-          });
-        },
-      };
+      // Return the full viem account - it has all methods needed
+      return account;
     } catch (error) {
       const err = error as Error;
       this.logger.error(
@@ -317,45 +311,47 @@ export class LightningNodeService {
       this.configService.get<string>(`${baseChain.toUpperCase()}_RPC_URL`) ||
       this.getDefaultRpcUrl(baseChain);
 
+    // Create EOA signer account first (needed for wallet client)
+    // This uses the normal EVM wallet which has a private key
+    const eoaAccount = await this.createEOASignerAccount(userId, baseChain);
+
     // Create public client
     const publicClient = createPublicClient({
       chain,
       transport: http(rpcUrl),
     }) as PublicClient;
 
-    // Create wallet client (used for on-chain operations)
-    const walletClient = createPublicClient({
+    // Create wallet client with the EOA account for on-chain operations
+    // This is crucial - the wallet client needs an account that can sign transactions
+    const walletClient = createWalletClient({
+      account: eoaAccount, // The full viem account with all signing methods
       chain,
       transport: http(rpcUrl),
-    }) as unknown as WalletClient;
-
-    // Create EOA signer account for signing EIP-712 messages
-    // This uses the normal EVM wallet which has a private key
-    const eoaSigner = await this.createEOASignerAccount(userId, baseChain);
+    }) as WalletClient;
 
     this.logger.log(
-      `Using EOA address ${eoaSigner.address} for authentication (wallet address: ${walletAddress})`,
+      `Using EOA address ${eoaAccount.address} for authentication (wallet address: ${walletAddress})`,
     );
 
     // Create MainWallet interface
     // Use EOA address as main wallet address - signature must match the address in typed data
     const mainWallet: MainWallet = {
-      address: eoaSigner.address, // Use EOA address since that's what we sign with
+      address: eoaAccount.address, // Use EOA address since that's what we sign with
       signTypedData: async (typedData: any) => {
         try {
           this.logger.debug(
-            `Signing EIP-712 with address ${eoaSigner.address}, typed data message wallet: ${typedData.message?.wallet}`,
+            `Signing EIP-712 with address ${eoaAccount.address}, typed data message wallet: ${typedData.message?.wallet}`,
           );
           // Sign with the EOA account (which has the private key)
           // Viem requires destructured typed data
-          const signature = await eoaSigner.signTypedData({
+          const signature = await eoaAccount.signTypedData({
             domain: typedData.domain,
             types: typedData.types,
             primaryType: typedData.primaryType,
             message: typedData.message,
           });
           this.logger.debug(
-            `Signed EIP-712 message for wallet ${eoaSigner.address}`,
+            `Signed EIP-712 message for wallet ${eoaAccount.address}`,
           );
           return signature;
         } catch (error) {
@@ -1400,6 +1396,205 @@ export class LightningNodeService {
   }
 
   /**
+   * Fund payment channel (add to unified balance)
+   * 
+   * This creates or resizes a payment channel with Yellow Network,
+   * moving funds from the user's on-chain wallet to their unified balance.
+   * The unified balance can then be used for gasless deposits into Lightning Nodes.
+   * 
+   * Flow:
+   * 1. Check if user has existing channel for this chain/token
+   * 2. If yes: Resize channel (add funds)
+   * 3. If no: Create new channel
+   * 
+   * NOTE: This requires on-chain transaction and will currently fail due to
+   * channelId mismatch issue with Yellow Network on Base Mainnet.
+   * See: YELLOW_NETWORK_CHANNELID_ISSUE.md
+   */
+  async fundChannel(dto: FundChannelDto) {
+    this.logger.log(`Funding channel for user ${dto.userId} on ${dto.chain}`);
+
+    try {
+      // Validate chain
+      const chainName = dto.chain.toLowerCase();
+      if (chainName !== 'base' && chainName !== 'arbitrum') {
+        throw new BadRequestException(
+          `Unsupported chain: ${dto.chain}. Only "base" and "arbitrum" are supported.`,
+        );
+      }
+
+      // Get user's wallet address
+      const {
+        address: userWalletAddress,
+        isEOA,
+        chainKey,
+      } = await this.getUserWalletAddress(dto.userId, chainName);
+
+      // Get or create NitroliteClient
+      const cacheKey = `${dto.userId}-${chainName}-${userWalletAddress}`;
+      const client = await this.executeWithRetry(
+        async (client) => client, // Just return the client
+        dto.userId,
+        chainName,
+        userWalletAddress,
+        isEOA,
+        chainKey,
+        cacheKey,
+      );
+
+      // Parse amount (USDC/USDT use 6 decimals)
+      const decimals = 6;
+      const amount = BigInt(parseFloat(dto.amount) * Math.pow(10, decimals));
+
+      if (amount <= 0n) {
+        throw new BadRequestException('Amount must be greater than 0');
+      }
+
+      // Get chain ID and token address
+      const chainId = this.getChainId(chainName);
+      const tokenAddress = this.getTokenAddress(dto.asset, chainName);
+
+      this.logger.log(
+        `Funding channel: ${amount.toString()} (${dto.amount}) of ${dto.asset} on chain ${chainId}`,
+      );
+
+      // Check if user has existing channels
+      const channels = await client.getChannels();
+      this.logger.debug(
+        `User has ${channels.length} existing channels`,
+        channels.map((ch) => ({
+          id: ch.channelId,
+          chainId: ch.chainId,
+          status: ch.status,
+        })),
+      );
+
+      // Find matching channel (same chain and token)
+      const existingChannel = channels.find(
+        (ch) =>
+          ch.chainId === chainId &&
+          ch.state.allocations.some(
+            (alloc) => alloc[0].toString().toLowerCase() === tokenAddress.toLowerCase(),
+          ),
+      );
+
+      if (existingChannel) {
+        this.logger.log(
+          `Resizing existing channel ${existingChannel.channelId}`,
+        );
+
+        // Validate that the channel has both participants
+        const otherParticipant = existingChannel.participants[1];
+        if (!otherParticipant) {
+          throw new BadRequestException(
+            'Channel is missing the second participant (server address)',
+          );
+        }
+
+        // Resize existing channel
+        await client.resizeChannel(
+          existingChannel.channelId,
+          chainId,
+          amount,
+          userWalletAddress,
+          tokenAddress,
+          [userWalletAddress, otherParticipant],
+        );
+
+        return {
+          ok: true,
+          message: 'Channel resized successfully',
+          channelId: existingChannel.channelId,
+          amount: dto.amount,
+          asset: dto.asset,
+        };
+      } else {
+        this.logger.log('Creating new channel');
+
+        // Create new channel
+        // NOTE: In Yellow Network 0.5.x, channels are created with zero balance
+        // Then funded via resize_channel
+        const newChannel = await client.createChannel(
+          chainId,
+          tokenAddress,
+          amount,
+        );
+
+        return {
+          ok: true,
+          message: 'Channel created and funded successfully',
+          channelId: newChannel.channelId,
+          amount: dto.amount,
+          asset: dto.asset,
+        };
+      }
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(
+        `Failed to fund channel: ${err.message}`,
+        err.stack,
+      );
+
+      // Provide helpful error message
+      let errorMessage = `Channel funding failed: ${err.message}`;
+      
+      if (err.message.includes('InvalidStateSignatures')) {
+        errorMessage +=
+          '\n\nNote: There is a known issue with channel creation on Base Mainnet. ' +
+          'See YELLOW_NETWORK_CHANNELID_ISSUE.md for details.';
+      }
+
+      throw new BadRequestException(errorMessage);
+    }
+  }
+
+  /**
+   * Helper: Get chain ID from chain name
+   */
+  private getChainId(chainName: string): number {
+    const chainMap: Record<string, number> = {
+      base: 8453,
+      arbitrum: 42161,
+      ethereum: 1,
+      avalanche: 43114,
+    };
+    return chainMap[chainName] || 8453;
+  }
+
+  /**
+   * Helper: Get token address for asset
+   */
+  private getTokenAddress(asset: string, chainName: string): Address {
+    // Token addresses per chain
+    const tokens: Record<string, Record<string, Address>> = {
+      base: {
+        usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        usdt: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+      },
+      arbitrum: {
+        usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        usdt: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+      },
+    };
+
+    const chainTokens = tokens[chainName.toLowerCase()];
+    if (!chainTokens) {
+      throw new BadRequestException(
+        `Token addresses not configured for chain: ${chainName}`,
+      );
+    }
+
+    const tokenAddress = chainTokens[asset.toLowerCase()];
+    if (!tokenAddress) {
+      throw new BadRequestException(
+        `Token ${asset} not supported on ${chainName}`,
+      );
+    }
+
+    return tokenAddress;
+  }
+
+  /**
    * Deposit funds into a Lightning Node (gasless) via Yellow.
    * Persists the returned allocations to local DB (best-effort).
    */
@@ -1430,6 +1625,75 @@ export class LightningNodeService {
           (remoteSession.allocations || []) as any;
 
         await client.depositToLightningNode(
+          node.appSessionId as `0x${string}`,
+          dto.participantAddress as Address,
+          dto.asset,
+          dto.amount,
+          currentAllocations,
+        );
+
+        // Refresh remote state and persist balances best-effort
+        const updated = await client.getLightningNode(
+          node.appSessionId as `0x${string}`,
+        );
+        const updatedAllocations: AppSessionAllocation[] = (updated.allocations ||
+          []) as any;
+
+        for (const alloc of updatedAllocations) {
+          await this.prisma.lightningNodeParticipant.updateMany({
+            where: {
+              lightningNodeId: node.id,
+              address: (alloc as any).participant,
+              asset: dto.asset,
+            },
+            data: { balance: (alloc as any).amount } as any,
+          });
+        }
+
+        return { ok: true };
+      },
+      dto.userId,
+      node.chain,
+      userWalletAddress,
+      isEOA,
+      chainKey,
+      cacheKey,
+    );
+
+    return { ok: true };
+  }
+
+  /**
+   * Withdraw funds from a Lightning Node back to unified balance (gasless).
+   * Persists the returned allocations to local DB (best-effort).
+   */
+  async withdraw(dto: WithdrawFundsDto) {
+    const node = await this.prisma.lightningNode.findUnique({
+      where: { appSessionId: dto.appSessionId },
+      include: { participants: true },
+    });
+    if (!node)
+      throw new NotFoundException(
+        `Lightning Node not found: ${dto.appSessionId}`,
+      );
+
+    const {
+      address: userWalletAddress,
+      isEOA,
+      chainKey,
+    } = await this.getUserWalletAddress(dto.userId, node.chain);
+
+    const cacheKey = `${dto.userId}-${node.chain}-${userWalletAddress}`;
+
+    await this.executeWithRetry(
+      async (client) => {
+        const remoteSession = await client.getLightningNode(
+          node.appSessionId as `0x${string}`,
+        );
+        const currentAllocations: AppSessionAllocation[] =
+          (remoteSession.allocations || []) as any;
+
+        await client.withdrawFromLightningNode(
           node.appSessionId as `0x${string}`,
           dto.participantAddress as Address,
           dto.asset,

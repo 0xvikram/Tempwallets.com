@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { Loader2, Zap, Copy, ChevronRight, Search, Mail, CheckCircle2, AlertCircle, Wallet } from 'lucide-react';
+import { Loader2, Zap, Copy, ChevronRight, Search, Mail, CheckCircle2, AlertCircle, Wallet, Plus } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@repo/ui/components/ui/tooltip';
 import { useLightningNodes } from '@/hooks/lightning-nodes-context';
 import { CreateLightningNodeModal } from './create-lightning-node-modal';
 import { LightningNodeDetails } from './lightning-node-details';
+import { FundChannelModal } from '../modals/fund-channel-modal';
 import { LightningNode } from '@/lib/api';
 
 const LAST_SELECTED_LN_NODE_ID_KEY = 'tempwallets:lastSelectedLightningNodeId';
@@ -30,11 +32,13 @@ function AuthenticationBanner({
   authenticating,
   walletAddress,
   error,
+  onFundChannel,
 }: {
   authenticated: boolean;
   authenticating: boolean;
   walletAddress: string | null;
   error: string | null;
+  onFundChannel?: () => void;
 }) {
   const [copiedAddress, setCopiedAddress] = useState(false);
 
@@ -73,34 +77,68 @@ function AuthenticationBanner({
 
   if (authenticated && walletAddress) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 flex items-center gap-3">
-        <CheckCircle2 className="h-5 w-5 text-gray-700" />
-        <div className="flex-1">
-          <p className="font-rubik-medium text-gray-900 flex items-center gap-2">
-            <Wallet className="h-4 w-4" />
-            Wallet Connected
-          </p>
-          <div className="flex items-center gap-2">
-            <p 
-              className="text-sm text-gray-700 font-mono cursor-pointer hover:text-gray-900 transition-colors"
-              onClick={handleCopyAddress}
-              title="Click to copy full address"
-            >
-              {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+      <div className="space-y-3 mb-4">
+        {/* Wallet Status */}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-3">
+          <CheckCircle2 className="h-5 w-5 text-gray-700" />
+          <div className="flex-1">
+            <p className="font-rubik-medium text-gray-900 flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Wallet Connected
             </p>
-            <button
-              onClick={handleCopyAddress}
-              className="text-gray-600 hover:text-gray-900 transition-colors p-1 rounded hover:bg-gray-200"
-              title="Copy wallet address"
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-            {copiedAddress && (
-              <span className="text-xs text-green-600 font-medium">Copied!</span>
-            )}
+            <div className="flex items-center gap-2">
+              <p 
+                className="text-sm text-gray-700 font-mono cursor-pointer hover:text-gray-900 transition-colors"
+                onClick={handleCopyAddress}
+                title="Click to copy full address"
+              >
+                {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </p>
+              <button
+                onClick={handleCopyAddress}
+                className="text-gray-600 hover:text-gray-900 transition-colors p-1 rounded hover:bg-gray-200"
+                title="Copy wallet address"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              {copiedAddress && (
+                <span className="text-xs text-green-600 font-medium">Copied!</span>
+              )}
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {/* Unified Balance tile (Coming Soon) */}
+            <TooltipProvider>
+              <Tooltip delayDuration={150}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center px-3 py-1 rounded-lg bg-black text-white text-xs font-rubik-medium cursor-not-allowed opacity-80"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Unified Balance
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  className="bg-black/85 text-white text-xs px-3 py-2 rounded-md border border-white/10 max-w-xs space-y-1.5"
+                >
+                  <p className="font-semibold">Unified Balance</p>
+                  <p className="text-[11px] font-medium text-gray-200">Coming soon</p>
+                  <p className="text-[11px]">
+                    Unified balance funding is disabled in production right now. This feature will be available soon.
+                  </p>
+                  <p className="pt-1 text-[11px] text-white/80">
+                    Add Funds to Unified Balance
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded-full">Base</span>
           </div>
         </div>
-        <span className="text-xs bg-gray-200 text-gray-800 px-2 py-1 rounded-full">Base</span>
       </div>
     );
   }
@@ -271,6 +309,7 @@ export function LightningNodesView() {
   } = useLightningNodes();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [fundChannelModalOpen, setFundChannelModalOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -362,6 +401,7 @@ export function LightningNodesView() {
           authenticating={authenticating}
           walletAddress={walletAddress}
           error={error}
+          onFundChannel={() => setFundChannelModalOpen(true)}
         />
 
         {/* Empty State */}
@@ -397,6 +437,16 @@ export function LightningNodesView() {
             setSelectedNodeId(node.id);
           }}
         />
+
+        <FundChannelModal
+          open={fundChannelModalOpen}
+          onOpenChange={setFundChannelModalOpen}
+          chain="base"
+          asset="usdc"
+          onFundComplete={() => {
+            // Optionally refresh data after funding
+          }}
+        />
       </>
     );
   }
@@ -410,6 +460,7 @@ export function LightningNodesView() {
         authenticating={authenticating}
         walletAddress={walletAddress}
         error={error}
+        onFundChannel={() => setFundChannelModalOpen(true)}
       />
 
       <div className="space-y-6">
@@ -480,6 +531,16 @@ export function LightningNodesView() {
         onJoined={(node) => {
           setSelectedNodeId(node.id);
           setCreateModalOpen(false);
+        }}
+      />
+
+      <FundChannelModal
+        open={fundChannelModalOpen}
+        onOpenChange={setFundChannelModalOpen}
+        chain="base"
+        asset="usdc"
+        onFundComplete={() => {
+          // Optionally refresh data after funding
         }}
       />
     </>

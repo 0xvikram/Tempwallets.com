@@ -29,6 +29,8 @@ const CHAIN_NAMES: Record<string, string> = {
   uniqueSubstrate: 'Unique',
   paseo: 'Paseo',
   paseoAssethub: 'Paseo AssetHub',
+  // Testnets
+  sepolia: 'Sepolia Testnet',
 };
 
 /**

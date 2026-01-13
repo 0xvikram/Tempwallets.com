@@ -14,10 +14,12 @@ import {
   CreateLightningNodeDto,
   DepositFundsDto,
   TransferFundsDto,
+  WithdrawFundsDto,
   CloseLightningNodeDto,
   JoinLightningNodeDto,
   AuthenticateWalletDto,
   SearchSessionDto,
+  FundChannelDto,
 } from './dto/index.js';
 
 @Controller('lightning-node')
@@ -96,13 +98,51 @@ export class LightningNodeController {
   }
 
   /**
+   * POST /lightning-node/fund-channel
+   * Fund payment channel (add to unified balance)
+   *
+   * Creates or resizes a payment channel with Yellow Network,
+   * moving funds from the user's on-chain wallet to their unified balance.
+   * The unified balance can then be used for gasless deposits into Lightning Nodes.
+   *
+   * IMPORTANT: This is an ON-CHAIN transaction that requires gas fees.
+   * Uses the fixed address[] channelId computation from CHANNELID_FIX.md.
+   *
+   * Flow:
+   * 1. Check if user has existing channel for this chain/token
+   * 2. If yes: Resize channel (add funds)
+   * 3. If no: Create new channel
+   */
+  @Post('fund-channel')
+  @HttpCode(HttpStatus.OK)
+  async fundChannel(@Body(ValidationPipe) dto: FundChannelDto) {
+    return await this.lightningNodeService.fundChannel(dto);
+  }
+
+  /**
    * POST /lightning-node/deposit
    * Deposit funds to Lightning Node (gasless)
+   *
+   * Moves funds from unified balance to app session.
+   * Requires funds to be in unified balance first (use fund-channel endpoint).
    */
   @Post('deposit')
   @HttpCode(HttpStatus.OK)
   async deposit(@Body(ValidationPipe) dto: DepositFundsDto) {
     return await this.lightningNodeService.deposit(dto);
+  }
+
+  /**
+   * POST /lightning-node/withdraw
+   * Withdraw funds from Lightning Node (gasless)
+   *
+   * Moves funds from app session back to unified balance.
+   * From unified balance, funds can be withdrawn on-chain if needed.
+   */
+  @Post('withdraw')
+  @HttpCode(HttpStatus.OK)
+  async withdraw(@Body(ValidationPipe) dto: WithdrawFundsDto) {
+    return await this.lightningNodeService.withdraw(dto);
   }
 
   /**

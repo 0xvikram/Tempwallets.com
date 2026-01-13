@@ -96,7 +96,7 @@ export interface ChannelState {
  * Immutable channel configuration
  */
 export interface Channel {
-  participants: [Address, Address]; // [User, Clearnode] - always 2 parties
+  participants: Address[]; // Dynamic array of participants (Yellow Network protocol uses address[], not address[2])
   adjudicator: Address; // Adjudicator contract address
   challenge: bigint; // Challenge period in seconds
   nonce: bigint; // Unique nonce for channel ID

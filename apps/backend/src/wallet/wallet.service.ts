@@ -65,6 +65,7 @@ export class WalletService {
     | 'arbitrum'
     | 'polygon'
     | 'avalanche'
+    | 'sepolia'
     | 'moonbeamTestnet'
     | 'astarShibuya'
     | 'paseoPassetHub'
@@ -78,6 +79,7 @@ export class WalletService {
     'arbitrum',
     'polygon',
     'avalanche',
+    'sepolia',
     'moonbeamTestnet',
     'astarShibuya',
     'paseoPassetHub',
@@ -573,6 +575,7 @@ export class WalletService {
       arbitrum: 'Arbitrum',
       polygon: 'Polygon',
       avalanche: 'Avalanche',
+      sepolia: 'Sepolia Testnet',
       tron: 'Tron',
       bitcoin: 'Bitcoin',
       solana: 'Solana',
